@@ -365,8 +365,8 @@
             </tr>
             <tr>
               <td><strong>Multi-engine coding</strong></td>
-              <td class="cell-good">6 engines: Claude, Cursor, crew-cli, Codex, Gemini, OpenCode</td>
-              <td class="cell-weak">No coding engines</td>
+              <td class="cell-good">6 engines: Claude Code, Cursor, crew-cli, Codex, Gemini, OpenCode</td>
+              <td class="cell-weak">No CLI engines &mdash; direct LLM calls only</td>
               <td class="cell-weak">Usually one engine</td>
               <td class="cell-weak">Single engine only</td>
             </tr>
@@ -379,8 +379,8 @@
             </tr>
             <tr>
               <td><strong>Specialist agents</strong></td>
-              <td class="cell-good">20+ (coder, QA, fixer, security, PM, etc.)</td>
-              <td class="cell-weak">1 general assistant</td>
+              <td class="cell-good">20+ built-in (coder, QA, fixer, security, PM, etc.)</td>
+              <td class="cell-neutral">1 agent + configurable skills (13K+ on ClawHub)</td>
               <td class="cell-neutral">Varies</td>
               <td class="cell-weak">1 agent</td>
             </tr>
@@ -394,7 +394,7 @@
             <tr>
               <td><strong>Execution quality engine</strong></td>
               <td class="cell-good">8 modules &mdash; failure memory, verification gates, patch critic</td>
-              <td class="cell-weak">No</td>
+              <td class="cell-weak">No &mdash; direct LLM calls for file edits</td>
               <td class="cell-weak">No</td>
               <td class="cell-weak">No</td>
             </tr>
@@ -429,7 +429,7 @@
             <tr>
               <td><strong>MCP integration</strong></td>
               <td class="cell-good">MCP server (64 tools) &mdash; works with Claude Desktop, Cursor, VS Code, Zed, Codex</td>
-              <td class="cell-neutral">MCP client support</td>
+              <td class="cell-good">MCP client + server support</td>
               <td class="cell-neutral">Varies</td>
               <td class="cell-neutral">Some (Codex, Claude Code)</td>
             </tr>
@@ -443,7 +443,7 @@
             <tr>
               <td><strong>Docker isolation</strong></td>
               <td class="cell-good">5-layer security (AppArmor + firewall + allowlist)</td>
-              <td class="cell-weak">No &mdash; <a href="security.html" style="color:var(--accent);">ClawJacked vulnerability</a></td>
+              <td class="cell-neutral">Docker sandbox + permissions &mdash; <a href="security.html" style="color:var(--accent);">ClawJacked patched</a></td>
               <td class="cell-neutral">Server-side isolation</td>
               <td class="cell-weak">No sandboxing</td>
             </tr>
