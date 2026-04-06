@@ -1916,6 +1916,15 @@ const server = http.createServer(async (req, res) => {
           else if (suite === "test") { // crew-cli
             const count = async (d) => { try { return (await fs.promises.readdir(d)).filter(f => f.match(/\.test\./)).length; } catch { return 0; } };
             files_total = await count(path.join(crewCliTestDir, "unit")) + await count(crewCliTestDir) + await count(crewCliTestDir2);
+          } else if (suiteKey === "all") {
+            // Sum all suites
+            const count = async (d, p) => { try { return (await fs.promises.readdir(d)).filter(f => f.match(p)).length; } catch { return 0; } };
+            const countR = async (d) => { try { return (await fs.promises.readdir(d)).filter(f => f.match(/\.test\./)).length; } catch { return 0; } };
+            files_total = await count(path.join(testFileDir, "unit"), /\.test\.mjs$/)
+              + await count(path.join(testFileDir, "integration"), /\.test\.mjs$/)
+              + await count(path.join(testFileDir, "e2e"), /\.test\.mjs$/)
+              + await count(testsE2eDir, /\.spec\.js$/)
+              + await countR(path.join(crewCliTestDir, "unit")) + await countR(crewCliTestDir) + await countR(crewCliTestDir2);
           }
         } catch {}
         // Write initial progress
