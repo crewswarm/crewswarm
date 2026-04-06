@@ -28,6 +28,7 @@ crew-cli is the built-in execution engine. It runs standalone or as one of crews
 ## Primary pages
 - Main website: https://crewswarm.ai/
 - CLI Guide: https://crewswarm.ai/cli.html
+- Benchmarks: https://crewswarm.ai/benchmarks.html
 - AI Models board: https://crewswarm.ai/models.html
 - Vibe IDE: https://crewswarm.ai/vibe.html
 - Deploy: https://crewswarm.ai/deploy.html

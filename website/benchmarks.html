@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://cdn.simpleicons.org" crossorigin />
+  <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
+  <title>crewswarm Benchmarks — 29 Models at 100/100 Quality, Full Results</title>
+  <meta name="description"
+    content="Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks, 14 models at 90/100 on L2 planning. Methodology, results, and how to reproduce." />
+  <meta name="keywords"
+    content="crewswarm benchmarks, AI coding benchmark, crew-cli quality, 29 models 100/100, L2 planner, TypeScript benchmark, model comparison, LLM coding test" />
+  <!-- Open Graph -->
+  <meta property="og:title" content="crewswarm Benchmarks — 29 Models at 100/100 Quality, Full Results" />
+  <meta property="og:description"
+    content="Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks, 14 models at 90/100 on L2 planning. Methodology, results, and how to reproduce." />
+  <meta property="og:url" content="https://crewswarm.ai/benchmarks.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="crewswarm — local-first multi-agent AI orchestration" />
+  <meta property="og:site_name" content="crewswarm" />
+  <meta property="og:locale" content="en_US" />
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@crewswarm" />
+  <meta name="twitter:title" content="crewswarm Benchmarks — 29 Models at 100/100 Quality" />
+  <meta name="twitter:description"
+    content="Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks. Methodology, results, and how to reproduce." />
+  <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
+  <!-- SEO -->
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#818cf8" />
+  <meta name="author" content="crewswarm" />
+  <link rel="canonical" href="https://crewswarm.ai/benchmarks.html" />
+  <link rel="alternate" hreflang="en" href="https://crewswarm.ai/benchmarks.html" />
+  <link rel="icon" type="image/png" href="favicon.webp?v=4" />
+  <link rel="apple-touch-icon" href="favicon.webp?v=4" />
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://crewswarm.ai/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Benchmarks",
+        "item": "https://crewswarm.ai/benchmarks.html"
+      }
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "crewswarm Benchmarks — 29 Models at 100/100 Quality",
+    "description": "Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks, 14 models at 90/100 on L2 planning.",
+    "url": "https://crewswarm.ai/benchmarks.html",
+    "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" },
+    "about": {
+      "@type": "SoftwareApplication",
+      "name": "crew-cli",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0QSG6Y9DHT"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag("js", new Date());
+    gtag("config", "G-0QSG6Y9DHT");
+  </script>
+
+</head>
+
+<body>
+  <!-- NAV -->
+  <nav role="navigation" aria-label="Main navigation">
+    <div class="nav-container">
+      <a class="nav-logo" href="index.html" aria-label="crewswarm home">
+        <img class="nav-logo-icon" src="favicon.webp?v=4" alt="" aria-hidden="true" />
+        <span class="nav-logo-wordmark">crew<span class="nav-logo-hq">swarm</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks" role="menubar">
+        <li role="none"><a href="index.html" role="menuitem" class="nav-link-item">Home</a></li>
+        <li role="none"><a href="models.html" role="menuitem" class="nav-link-item">Models</a></li>
+        <li role="none"><a href="vibe.html" role="menuitem" class="nav-link-item">Vibe IDE</a></li>
+        <li role="none"><a href="deploy.html" role="menuitem" class="nav-link-item">Deploy</a></li>
+        <li role="none"><a href="index.html#features" role="menuitem" class="nav-link-item">Features</a></li>
+        <li role="none"><a href="security.html" role="menuitem" class="nav-link-item">Security</a></li>
+        <li role="none" class="nav-dropdown">
+          <button class="nav-dropdown-toggle" aria-haspopup="true" aria-expanded="false">
+            More
+            <svg class="nav-dropdown-chevron" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <ul class="nav-dropdown-menu" role="menu">
+            <li role="none"><a href="docs.html" role="menuitem">Docs</a></li>
+            <li role="none"><a href="api.html" role="menuitem">API Reference</a></li>
+            <li role="none"><a href="cli.html" role="menuitem">CLI</a></li>
+            <li role="none"><a href="benchmarks.html" role="menuitem">Benchmarks</a></li>
+            <li role="none"><a href="atat.html" role="menuitem">@@Protocol</a></li>
+            <li role="none"><a href="engine-comparison.html" role="menuitem">Compare</a></li>
+            <li role="none"><a href="pm-loop-walkthrough.html" role="menuitem">Walkthrough</a></li>
+            <li role="none"><a href="changelog.html" role="menuitem">Changelog</a></li>
+            <li role="none"><a href="blog/" role="menuitem">Blog</a></li>
+            <li role="none"><a href="about.html" role="menuitem">About</a></li>
+            <li role="none"><a href="contact.html" role="menuitem">Contact</a></li>
+          </ul>
+        </li>
+        <li role="none" class="nav-mobile-cta"><a href="index.html#get-started" class="btn btn-sm">Get started</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index.html#get-started" class="btn btn-sm nav-desktop-cta">Get started</a>
+        <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation menu" aria-expanded="false"
+          aria-controls="navLinks">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-badge">Benchmark Results</div>
+    <h1 class="gradient-text">29 models. 100/100 quality. Reproducible.</h1>
+    <p class="hero-sub" style="max-width: 54rem;">
+      Every model below produces correct, tested TypeScript on scoped coding tasks.
+      The execution quality engine is the equalizer &mdash; cheap models match expensive ones
+      because the runtime prevents failure modes, not the model.
+    </p>
+  </section>
+
+  <!-- METHODOLOGY -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Methodology</div>
+        <h2>How we test</h2>
+        <p class="section-desc">The quality benchmark runs 7 scoped TypeScript tasks against each model. Every task is deterministic and reproducible.</p>
+      </div>
+
+      <div class="grid-2" style="margin-top: 2rem; gap: 1rem;">
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 1</h3>
+          <p>Create a README with specific content structure and sections.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 2</h3>
+          <p>Create a typed <code>add</code> function with a summary documentation file.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 3</h3>
+          <p>Create utils with 3 functions plus tests, then run the tests to verify.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 4</h3>
+          <p>Fix a divide-by-zero bug, update the tests, then run to confirm the fix.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 5</h3>
+          <p>Refactor: extract a function to its own file, update imports, verify the build.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 6</h3>
+          <p>Fix a wrong test assertion, then run tests to verify correctness.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 7</h3>
+          <p>Create a calculator module importing math functions, with full test coverage.</p>
+        </div>
+        <div class="page-card">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Scoring</h3>
+          <p>Each task is checked for correctness (file exists, content correct), <code>tsc --strict</code> passes, all tests pass, no regressions. 100 = all 7 pass.</p>
+        </div>
+      </div>
+
+      <div style="background: var(--bg-card2, #111827); border-radius: 12px; padding: 2rem; margin-top: 2rem;">
+        <p style="font-size: 0.9rem; color: var(--text-2); margin: 0;">These are scoped L3 execution tasks &mdash; the kind that run in parallel after the planner breaks work down. They test the engine's ability to make any model produce correct, verified code.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- L3 EXECUTION RESULTS -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">L3 Execution</div>
+        <h2>29 models at 100/100</h2>
+        <p class="section-desc">Every model below scores perfect on the quality benchmark: correct TypeScript, all tests passing, typecheck clean, no regressions. The engine makes $0.0003/task models produce the same quality as $0.03/task models.</p>
+      </div>
+
+      <div style="overflow-x:auto; margin-top: 2rem;">
+        <table style="width:100%; border-collapse: collapse; font-size: 0.85rem;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border, #ddd);">
+              <th style="text-align:left; padding: 0.5rem;">Model</th>
+              <th style="text-align:center; padding: 0.5rem;">Provider</th>
+              <th style="text-align:right; padding: 0.5rem;">Input $/1M</th>
+              <th style="text-align:right; padding: 0.5rem;">Output $/1M</th>
+              <th style="text-align:center; padding: 0.5rem;">Speed</th>
+              <th style="text-align:right; padding: 0.5rem;">~Cost/Task</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding:0.35rem;">Claude (OAuth)</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">FREE</td><td style="text-align:right;">FREE</td><td style="text-align:center;">25-69s</td><td style="text-align:right;color:#22c55e;">$0</td></tr>
+            <tr><td style="padding:0.35rem;">GPT-5.4 (OAuth)</td><td style="text-align:center;">OpenAI</td><td style="text-align:right;">FREE</td><td style="text-align:right;">FREE</td><td style="text-align:center;">14s</td><td style="text-align:right;color:#22c55e;">$0</td></tr>
+            <tr><td style="padding:0.35rem;">GPT-OSS 20B</td><td style="text-align:center;">Groq</td><td style="text-align:right;">$0.08</td><td style="text-align:right;">$0.30</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.0003</td></tr>
+            <tr><td style="padding:0.35rem;">Gemini 2.5 Flash Lite</td><td style="text-align:center;">Google</td><td style="text-align:right;">$0.10</td><td style="text-align:right;">$0.40</td><td style="text-align:center;">11s</td><td style="text-align:right;">$0.0004</td></tr>
+            <tr><td style="padding:0.35rem;">DeepSeek Chat</td><td style="text-align:center;">DeepSeek</td><td style="text-align:right;">$0.28</td><td style="text-align:right;">$0.42</td><td style="text-align:center;">26s</td><td style="text-align:right;">$0.001</td></tr>
+            <tr><td style="padding:0.35rem;">Grok 4-1 Fast</td><td style="text-align:center;">xAI</td><td style="text-align:right;">$0.20</td><td style="text-align:right;">$0.50</td><td style="text-align:center;">75s</td><td style="text-align:right;">$0.001</td></tr>
+            <tr><td style="padding:0.35rem;">MiniMax M2.1</td><td style="text-align:center;">OpenRouter</td><td style="text-align:right;">$0.27</td><td style="text-align:right;">$0.95</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.001</td></tr>
+            <tr><td style="padding:0.35rem;">Gemini 2.5 Flash</td><td style="text-align:center;">Google</td><td style="text-align:right;">$0.30</td><td style="text-align:right;">$2.50</td><td style="text-align:center;">11s</td><td style="text-align:right;">$0.002</td></tr>
+            <tr><td style="padding:0.35rem;">Kimi K2.5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:right;">$0.38</td><td style="text-align:right;">$1.72</td><td style="text-align:center;">16s</td><td style="text-align:right;">$0.002</td></tr>
+            <tr><td style="padding:0.35rem;">Groq Llama 3.3 70B</td><td style="text-align:center;">Groq</td><td style="text-align:right;">$0.59</td><td style="text-align:right;">$0.79</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.002</td></tr>
+            <tr><td style="padding:0.35rem;">Cerebras Qwen3-235B</td><td style="text-align:center;">Cerebras</td><td style="text-align:right;">$0.60</td><td style="text-align:right;">$1.20</td><td style="text-align:center;">2s</td><td style="text-align:right;">$0.002</td></tr>
+            <tr><td style="padding:0.35rem;">GLM-5</td><td style="text-align:center;">OpenCode/Zen</td><td style="text-align:right;">$0.72</td><td style="text-align:right;">$2.30</td><td style="text-align:center;">15s</td><td style="text-align:right;">$0.003</td></tr>
+            <tr><td style="padding:0.35rem;">Claude Haiku 4.5</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$1.00</td><td style="text-align:right;">$5.00</td><td style="text-align:center;">25s</td><td style="text-align:right;">$0.007</td></tr>
+            <tr><td style="padding:0.35rem;">GPT-5.4</td><td style="text-align:center;">OpenAI</td><td style="text-align:right;">$2.50</td><td style="text-align:right;">$15.00</td><td style="text-align:center;">14s</td><td style="text-align:right;">$0.02</td></tr>
+            <tr><td style="padding:0.35rem;">Claude Sonnet 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$3.00</td><td style="text-align:right;">$15.00</td><td style="text-align:center;">69s</td><td style="text-align:right;">$0.02</td></tr>
+            <tr><td style="padding:0.35rem;">Claude Opus 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$5.00</td><td style="text-align:right;">$25.00</td><td style="text-align:center;">29s</td><td style="text-align:right;">$0.03</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-3); margin-top:0.75rem;">+ 13 more models at 100/100: GPT-5.4 Mini/Nano, GPT-5/5.2, GLM-4.6/4.7, MiniMax M2.5, Kimi K2, Grok 3 Mini, Grok Code Fast, Big Pickle, DeepSeek Reasoner, Qwen3-32B</p>
+    </div>
+  </section>
+
+  <!-- L2 PLANNER RESULTS -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">L2 Planner</div>
+        <h2>14 models at 90/100</h2>
+        <p class="section-desc">Task decomposition quality &mdash; correct dependency chains, diverse persona assignments, acceptance criteria, verification checks. Cheap models match expensive ones because the prompt engineering does the work.</p>
+      </div>
+
+      <div style="overflow-x:auto; margin-top: 2rem;">
+        <table style="width:100%; border-collapse: collapse; font-size: 0.85rem;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border, #ddd);">
+              <th style="text-align:left; padding: 0.5rem;">Model</th>
+              <th style="text-align:center; padding: 0.5rem;">Score</th>
+              <th style="text-align:center; padding: 0.5rem;">Units</th>
+              <th style="text-align:right; padding: 0.5rem;">~$/Plan</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding:0.35rem;">Claude / GPT-5.4 (OAuth)</td><td style="text-align:center;">90</td><td style="text-align:center;">9-12</td><td style="text-align:right;color:#22c55e;">$0</td></tr>
+            <tr><td style="padding:0.35rem;">GPT-OSS 20B (Groq)</td><td style="text-align:center;">90</td><td style="text-align:center;">15</td><td style="text-align:right;">$0.003</td></tr>
+            <tr><td style="padding:0.35rem;">Gemini 2.5 Flash Lite</td><td style="text-align:center;">90</td><td style="text-align:center;">~10</td><td style="text-align:right;">$0.004</td></tr>
+            <tr><td style="padding:0.35rem;">DeepSeek Reasoner</td><td style="text-align:center;">90</td><td style="text-align:center;">~10</td><td style="text-align:right;">$0.004</td></tr>
+            <tr><td style="padding:0.35rem;">Grok 3 Mini / Qwen3-32B</td><td style="text-align:center;">90</td><td style="text-align:center;">~10</td><td style="text-align:right;">$0.005</td></tr>
+            <tr><td style="padding:0.35rem;">GLM-5 (Zen)</td><td style="text-align:center;">90</td><td style="text-align:center;">16</td><td style="text-align:right;">$0.02</td></tr>
+            <tr><td style="padding:0.35rem;">Kimi K2.5 (Zen)</td><td style="text-align:center;">90</td><td style="text-align:center;">~10</td><td style="text-align:right;">$0.015</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXECUTION QUALITY ENGINE -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Under the Hood</div>
+        <h2>Why cheap models match expensive ones</h2>
+        <p class="section-desc">The execution quality engine wraps every task in 8 runtime modules that prevent common failure modes. These are not prompting tricks &mdash; they are structural constraints that force correct behavior regardless of model intelligence.</p>
+      </div>
+
+      <div class="feature-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+        <div class="feature-card">
+          <h3>Failure Memory</h3>
+          <p>When a tool call fails, the engine remembers. Same command with same params gets blocked after one failure for shell, two for others. Models are forced to try different approaches instead of looping.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Verification Gate</h3>
+          <p>The engine extracts verification goals from the task and tracks them as first-class state. When the model says "done" with unproven goals, it gets forced back with up to 3 extra turns demanding proof.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Action Ranking</h3>
+          <p>Each turn scores 7 action types based on execution state. Edited without testing? Test scores highest. Three reads in a row? Penalized. The model sees ranked priorities, not just a list of tools.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Task Mode Strategies</h3>
+          <p>The engine auto-detects 5 modes &mdash; bugfix, feature, refactor, test repair, analysis &mdash; and applies mode-specific strategies. Bugfixes reproduce first. Refactors typecheck before declaring done.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Patch Critic</h3>
+          <p>Every file edit is evaluated in real time: was the file read before writing? Is the same file being churned? Are edits in scope? The critic injects quality guidance with zero extra LLM calls.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Adaptive Weights</h3>
+          <p>The action ranking system learns from past runs. High-scoring trajectories boost their action patterns. Low-scoring runs penalize theirs. The engine calibrates to your codebase over time.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Structured History</h3>
+          <p>Instead of flattening tool results into text, the engine preserves rich state: files read vs written, active goals, failures and reasons. This survives context compaction intact.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Smart Delegation</h3>
+          <p>When work splits into parallel units, the engine scores each specialist against the task: language match, complexity, historical success rate. Bug fixes route to the fixer. Docs route to the writer.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REPRODUCE -->
+  <section class="section bg-dark">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Reproducibility</div>
+        <h2>Run the benchmarks yourself</h2>
+      </div>
+      <div
+        style="background:#000; padding:2rem; border-radius:12px; font-family:monospace; color:var(--accent); border:1px solid var(--border); overflow-x: auto; font-size: 0.85rem; line-height: 1.7;">
+        <span style="color:var(--text-3);"># Clone and build</span><br />
+        <span style="color:#fff;">git clone https://github.com/crewswarm/crewswarm</span><br />
+        <span style="color:#fff;">cd crewswarm/crew-cli</span><br />
+        <span style="color:#fff;">npm install && npm run build</span><br /><br />
+        <span style="color:var(--text-3);"># Run quality benchmark against a specific model</span><br />
+        <span style="color:#fff;">CREW_PROVIDER=groq node scripts/benchmark-quality.mjs --model llama-3.3-70b</span><br /><br />
+        <span style="color:var(--text-3);"># Run L2 planner benchmark</span><br />
+        <span style="color:#fff;">node scripts/benchmark-l2-planner.mjs</span><br /><br />
+        <span style="color:var(--text-3);"># Run full preset sweep</span><br />
+        <span style="color:#fff;">node scripts/benchmark-presets.mjs</span>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-3); margin-top: 1rem;">Full benchmark code in <code style="color: var(--accent);">crew-cli/benchmarks/</code> and <code style="color: var(--accent);">crew-cli/scripts/</code></p>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">FAQ</div>
+        <h2>Common questions</h2>
+      </div>
+
+      <div style="margin-top: 2rem; display: grid; gap: 1.5rem;">
+        <div class="page-card">
+          <h3>Why only TypeScript tasks?</h3>
+          <p>TypeScript has strict type checking which is a harder bar than plain JavaScript. <code>tsc --strict</code> catches errors that would silently pass in other languages &mdash; implicit any, null safety, unused variables. If a model produces correct strict TypeScript, it can produce correct code in less strict languages too.</p>
+        </div>
+        <div class="page-card">
+          <h3>Why scoped tasks instead of full features?</h3>
+          <p>These test L3 execution quality in isolation. Full features involve L2 planning + L3 execution combined &mdash; the L2 planner benchmark tests that decomposition step separately. Scoped tasks give a clean signal on execution quality without confounding it with planning quality.</p>
+        </div>
+        <div class="page-card">
+          <h3>Can I add my own model?</h3>
+          <p>Yes. Set the API key for your provider, then run the benchmark script with the <code>--model</code> flag. Any OpenAI-compatible endpoint works. If the model supports tool calling and can produce TypeScript, it can run the benchmark.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">crewswarm</div>
+        <p>Multi-agent AI orchestration.<br />Your models. Your keys. Your machine.</p>
+        <p style="margin-top: 1rem; font-size: 0.85rem; opacity: 0.8;">Contact: <a
+            href="mailto:info@crewswarm.ai">info@crewswarm.ai</a></p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <a href="index.html">Home</a>
+          <a href="models.html">Models</a>
+          <a href="vibe.html">Vibe IDE</a>
+          <a href="deploy.html">Deploy</a>
+          <a href="security.html">Security</a>
+          <a href="docs.html">Docs</a>
+          <a href="cli.html">CLI</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Company</div>
+          <a href="about.html">About Us</a>
+          <a href="contact.html">Contact</a>
+          <a href="engine-comparison.html">Compare</a>
+          <a href="pm-loop-walkthrough.html">Walkthrough</a>
+          <a href="privacy.html">Privacy</a>
+          <a href="terms.html">Terms</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/crewswarm/crewswarm/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://twitter.com/crewswarm" target="_blank" rel="noopener">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container">
+        <span>&copy; 2026 crewswarm. All rights reserved.</span>
+      </div>
+    </div>
+  </footer>
+
+
+  <script src="script.js"></script>
+</body>
+
+</html>

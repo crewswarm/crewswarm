@@ -366,6 +366,7 @@ It combines:
 - Security: https://crewswarm.ai/security.html
 - Documentation: https://crewswarm.ai/docs.html
 - CLI Guide: https://crewswarm.ai/cli.html
+- Benchmarks: https://crewswarm.ai/benchmarks.html
 - ATAT Protocol: https://crewswarm.ai/atat.html
 - OpenClaw Comparison: https://crewswarm.ai/openclaw-comparison.html
 - About: https://crewswarm.ai/about.html
