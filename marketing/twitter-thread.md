@@ -30,13 +30,13 @@ multiple times a day.
 
 **Tweet 3 (the solution):**
 
-crewswarm sits between you and these tools.
+crewswarm sits between you and these tools. Stinki (crew-lead) is your co-founder who talks shit but gets the job done.
 
-You describe the work once. The system:
-- Routes it to the right specialist agent
-- Picks the right engine (Claude, Codex, Gemini, Cursor, OpenCode, or crew-cli)
-- Runs agents in parallel in isolated git worktrees
-- Verifies the output before declaring done
+you describe the work once. Stinki:
+- routes it to the right specialist agent
+- picks the right engine (Claude, Codex, Gemini, Cursor, OpenCode, or crew-cli)
+- runs agents in parallel in isolated git worktrees
+- verifies the output before declaring done
 
 ---
 
@@ -76,11 +76,11 @@ Same crew, same memory, any surface.
 
 **Tweet 7 (PM loop):**
 
-The PM Loop: point it at a ROADMAP.md and walk away.
+the PM Loop: point Stinki at a ROADMAP.md and walk away.
 
-It reads the next task, dispatches to the right agents, marks it done or failed, moves on.
+he reads the next task, dispatches to the right agents, roasts them if they fail, moves on.
 
-It's shipped features overnight while we slept.
+has shipped features overnight while we slept. no complaints. some profanity.
 
 ---
 
@@ -99,8 +99,8 @@ https://github.com/crewswarm/crewswarm
 
 open-sourced crewswarm — multi-agent AI coding platform.
 
-you're the PM. 20+ specialist agents are your engineers. 6 coding engines. 40+ models. parallel execution in git worktrees.
+you're the PM. Stinki (crew-lead) is your shit-talking co-founder who runs 20+ specialist agents across 6 coding engines.
 
-crew-cli gives agentic coding to every model that doesn't have its own CLI.
+hit a rate limit? he switches engines and keeps going. no context lost.
 
 https://crewswarm.ai

@@ -8,9 +8,9 @@ Multi-agent AI coding — you're the PM, agents are engineers
 
 ## Description
 
-crewswarm is an open-source, local-first platform that gives you an AI engineering crew instead of a single assistant.
+crewswarm is an open-source, local-first platform that gives you an AI engineering crew instead of a single assistant. Stinki (crew-lead) is the shit-talking crew leader who routes your work, picks the right agents, and won't let anyone declare "done" without proof.
 
-You describe the work once. The system routes it to 20+ specialist agents (coder, QA, fixer, security, PM, copywriter), runs them in parallel in isolated git worktrees, picks the right model from 40+ options across 12 providers, and verifies the output before declaring done.
+You describe the work once. Stinki routes it to 20+ specialist agents (coder, QA, fixer, security, PM, copywriter), runs them in parallel in isolated git worktrees, picks the right model from 40+ options across 12 providers, and verifies the output before declaring done.
 
 6 coding engines (Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, crew-cli) — hit a rate limit, the next task routes to a different engine automatically. Session state resumes across all of them.
 
@@ -35,11 +35,11 @@ MIT license. Local-first. No cloud dependency. Your code never leaves your machi
 
 Hit your Claude limit mid-refactor? Switched to Codex, re-explained everything, lost context? Every AI coding tool locks you into one provider. You can't switch without starting over.
 
-crewswarm sits between you and the tools. You describe the work, it plans, dispatches to 20+ specialist agents, runs them in parallel in git worktrees, verifies output.
+crewswarm sits between you and the tools. Stinki (crew-lead) is the foul-mouthed crew leader who plans your work, dispatches to 20+ specialist agents, runs them in parallel in git worktrees, and won't accept "done" without evidence.
 
 The part that doesn't exist elsewhere: crew-cli gives agentic coding to every model that doesn't have its own CLI — Grok, DeepSeek, Qwen, Groq, Ollama. The execution quality engine (8 deterministic modules) makes cheap models match expensive ones. 29 models at 100/100 on our coding benchmark. Groq GPT-OSS 20B ($0.0003/task) = same quality as Claude Opus ($0.03/task). 100x cheaper.
 
-PM Loop reads your ROADMAP.md and ships autonomously. Has shipped features overnight.
+PM Loop: point Stinki at your ROADMAP.md and walk away. He ships features overnight. No complaints. Some profanity.
 
 Local-first, MIT, ~64K LOC TypeScript.
 
