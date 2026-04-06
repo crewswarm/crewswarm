@@ -3502,13 +3502,10 @@ function levenshteinDistance(a, b) {
 }
 function constraintLevelForPersona(persona) {
   const lower = persona.toLowerCase();
-  if (lower.includes("planner") || lower.includes("reviewer") || lower.includes("qa") || lower.includes("architect")) {
+  if (lower.includes("planner") || lower.includes("architect")) {
     return "read-only";
   }
-  if (lower.includes("scaffold") || lower.includes("init") || lower.includes("setup")) {
-    return "full";
-  }
-  return "edit";
+  return "full";
 }
 function errMsg(err) {
   if (err instanceof Error) return err.message;
@@ -4072,9 +4069,9 @@ var init_crew_adapter = __esm({
       }
       async writeFile(params) {
         const isAbsolute = params.file_path.startsWith("/");
-        const { existsSync: existsSync24 } = await import("node:fs");
+        const { existsSync: existsSync26 } = await import("node:fs");
         const checkPath = isAbsolute ? params.file_path : resolve4(this.config.getWorkspaceRoot(), params.file_path);
-        if (existsSync24(checkPath)) {
+        if (existsSync26(checkPath)) {
           const { statSync: statSync2 } = await import("node:fs");
           const size = statSync2(checkPath).size;
           if (size > 0) {
@@ -4088,11 +4085,11 @@ var init_crew_adapter = __esm({
         }
         if (isAbsolute) {
           try {
-            const { mkdir: mkdir26, writeFile: writeFile25 } = await import("node:fs/promises");
+            const { mkdir: mkdir26, writeFile: writeFile26 } = await import("node:fs/promises");
             const { dirname: dirname9 } = await import("node:path");
             const dir = dirname9(params.file_path);
             await mkdir26(dir, { recursive: true });
-            await writeFile25(params.file_path, params.content, "utf8");
+            await writeFile26(params.file_path, params.content, "utf8");
             return {
               success: true,
               output: `Wrote ${params.file_path} (${params.content.length} bytes)`
@@ -4113,8 +4110,8 @@ var init_crew_adapter = __esm({
       }
       async appendFile(params) {
         const filePath = resolve4(this.config.getWorkspaceRoot(), params.file_path);
-        const { existsSync: existsSync24 } = await import("node:fs");
-        if (existsSync24(filePath) && !this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
+        const { existsSync: existsSync26 } = await import("node:fs");
+        if (existsSync26(filePath) && !this._filesRead.has(params.file_path) && !this._filesRead.has(filePath)) {
           return {
             success: false,
             error: `You must read_file "${params.file_path}" before appending to it. Read first to understand the existing content and where your addition should go.`,
@@ -7493,17 +7490,194 @@ ${sections.join("\n")}` : "";
   }
 });
 
+// src/engine/tool-filter.ts
+function detectTaskDomains(task) {
+  const lower = task.toLowerCase();
+  const domains = /* @__PURE__ */ new Set();
+  domains.add("coding");
+  if (/\b(search|find.*online|web|url|http|fetch.*page|research|google)\b/.test(lower)) {
+    domains.add("research");
+  }
+  if (/\b(git|commit|branch|merge|push|pull|diff|blame|worktree|rebase)\b/.test(lower)) {
+    domains.add("git");
+  }
+  if (/\b(plan|roadmap|break.*down|decompose|architect|design.*system)\b/.test(lower)) {
+    domains.add("planning");
+  }
+  if (/\b(tests?|spec|assert|coverage|jest|mocha|vitest|verify|validate)\b/.test(lower)) {
+    domains.add("testing");
+  }
+  if (/\b(doc|readme|guide|tutorial|comment|explain|write.*about)\b/.test(lower)) {
+    domains.add("docs");
+  }
+  if (lower.length > 500 || /\b(entire|whole|project|refactor.*across|migration)\b/.test(lower)) {
+    domains.add("full");
+  }
+  return domains;
+}
+function filterToolsForTask(tools, task, options = {}) {
+  const domains = detectTaskDomains(task);
+  if (domains.has("full")) {
+    return options.maxTools ? tools.slice(0, options.maxTools) : tools;
+  }
+  const allowed = new Set(CORE_TOOLS);
+  if (domains.has("git")) for (const t of GIT_TOOLS) allowed.add(t);
+  if (domains.has("research")) for (const t of WEB_TOOLS) allowed.add(t);
+  if (domains.has("planning")) {
+    for (const t of PLANNING_TOOLS) allowed.add(t);
+    for (const t of TRACKER_TOOLS) allowed.add(t);
+  }
+  if (domains.has("testing")) for (const t of CODE_INTEL_TOOLS) allowed.add(t);
+  if (domains.has("docs")) for (const t of MEMORY_TOOLS) allowed.add(t);
+  for (const t of EXTRA_TOOLS) allowed.add(t);
+  if (options.alwaysInclude) {
+    for (const t of options.alwaysInclude) allowed.add(t);
+  }
+  const filtered = tools.filter((t) => allowed.has(t.name));
+  if (options.maxTools && filtered.length > options.maxTools) {
+    return filtered.slice(0, options.maxTools);
+  }
+  return filtered;
+}
+function describeFiltering(task, totalTools, filteredCount) {
+  const domains = detectTaskDomains(task);
+  return `[ToolFilter] ${filteredCount}/${totalTools} tools (domains: ${[...domains].join(", ")})`;
+}
+var CORE_TOOLS, GIT_TOOLS, WEB_TOOLS, MEMORY_TOOLS, CODE_INTEL_TOOLS, PLANNING_TOOLS, TRACKER_TOOLS, EXTRA_TOOLS;
+var init_tool_filter = __esm({
+  "src/engine/tool-filter.ts"() {
+    "use strict";
+    CORE_TOOLS = /* @__PURE__ */ new Set([
+      "read_file",
+      "write_file",
+      "replace",
+      "edit",
+      "glob",
+      "grep_search",
+      "list_directory",
+      "run_shell_command",
+      "shell"
+    ]);
+    GIT_TOOLS = /* @__PURE__ */ new Set([
+      "git",
+      "worktree",
+      "enter_worktree",
+      "exit_worktree",
+      "merge_worktree",
+      "list_worktrees"
+    ]);
+    WEB_TOOLS = /* @__PURE__ */ new Set([
+      "google_web_search",
+      "web_search",
+      "web_fetch"
+    ]);
+    MEMORY_TOOLS = /* @__PURE__ */ new Set([
+      "save_memory",
+      "write_todos",
+      "get_internal_docs"
+    ]);
+    CODE_INTEL_TOOLS = /* @__PURE__ */ new Set([
+      "lsp",
+      "notebook_edit"
+    ]);
+    PLANNING_TOOLS = /* @__PURE__ */ new Set([
+      "enter_plan_mode",
+      "exit_plan_mode",
+      "ask_user"
+    ]);
+    TRACKER_TOOLS = /* @__PURE__ */ new Set([
+      "tracker_create_task",
+      "tracker_update_task",
+      "tracker_get_task",
+      "tracker_list_tasks",
+      "tracker_add_dependency",
+      "tracker_visualize"
+    ]);
+    EXTRA_TOOLS = /* @__PURE__ */ new Set([
+      "read_many_files",
+      "append_file",
+      "mkdir",
+      "grep_search_ripgrep",
+      "list",
+      "run_cmd",
+      "grep",
+      "check_background_task",
+      "sleep"
+    ]);
+  }
+});
+
+// src/engine/top-of-mind.ts
+import { readFile as readFile9 } from "node:fs/promises";
+import { existsSync as existsSync6 } from "node:fs";
+import { join as join11 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+async function loadTopOfMind(projectDir = process.cwd()) {
+  if (_cachedInstructions !== null && _cachedProjectDir === projectDir) {
+    return _cachedInstructions;
+  }
+  const sections = [];
+  const globalPath = join11(homedir4(), ".crewswarm", "instructions.md");
+  if (existsSync6(globalPath)) {
+    try {
+      const content = await readFile9(globalPath, "utf8");
+      if (content.trim()) {
+        sections.push(`## Global Instructions
+${content.trim()}`);
+      }
+    } catch {
+    }
+  }
+  const projectPath = join11(projectDir, ".crew", "instructions.md");
+  if (existsSync6(projectPath)) {
+    try {
+      const content = await readFile9(projectPath, "utf8");
+      if (content.trim()) {
+        sections.push(`## Project Instructions
+${content.trim()}`);
+      }
+    } catch {
+    }
+  }
+  const claudeMdPath = join11(projectDir, "CLAUDE.md");
+  if (existsSync6(claudeMdPath)) {
+    try {
+      const content = await readFile9(claudeMdPath, "utf8");
+      if (content.trim()) {
+        sections.push(`## Project Guidelines (CLAUDE.md)
+${content.trim()}`);
+      }
+    } catch {
+    }
+  }
+  _cachedInstructions = sections.length > 0 ? `
+
+## Top of Mind \u2014 Always Follow These Instructions
+${sections.join("\n\n")}
+` : "";
+  _cachedProjectDir = projectDir;
+  return _cachedInstructions;
+}
+var _cachedInstructions, _cachedProjectDir;
+var init_top_of_mind = __esm({
+  "src/engine/top-of-mind.ts"() {
+    "use strict";
+    _cachedInstructions = null;
+    _cachedProjectDir = null;
+  }
+});
+
 // src/executor/scratchpad.ts
 import { mkdirSync, rmSync } from "fs";
-import { join as join11 } from "path";
+import { join as join12 } from "path";
 import { tmpdir } from "os";
 function createScratchpad(sessionId) {
-  const dir = join11(tmpdir(), `crew-cli-scratch-${sessionId}`);
+  const dir = join12(tmpdir(), `crew-cli-scratch-${sessionId}`);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 function cleanupScratchpad(sessionId) {
-  const dir = join11(tmpdir(), `crew-cli-scratch-${sessionId}`);
+  const dir = join12(tmpdir(), `crew-cli-scratch-${sessionId}`);
   rmSync(dir, { recursive: true, force: true });
 }
 function getScratchpadInstructions(scratchDir) {
@@ -7525,8 +7699,8 @@ __export(collections_exports, {
   buildCollectionIndex: () => buildCollectionIndex,
   searchCollection: () => searchCollection
 });
-import { readdir as readdir3, readFile as readFile9, stat as stat3 } from "node:fs/promises";
-import { extname as extname2, join as join12, relative as relative2, resolve as resolve5 } from "node:path";
+import { readdir as readdir3, readFile as readFile10, stat as stat3 } from "node:fs/promises";
+import { extname as extname2, join as join13, relative as relative2, resolve as resolve5 } from "node:path";
 function tokenize(text) {
   return text.toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 1);
 }
@@ -7598,7 +7772,7 @@ async function walkDocs(rootDir, includeCode = false) {
     }
     for (const entry of entries) {
       if (IGNORED_DIRS.has(entry)) continue;
-      const fullPath = join12(dir, entry);
+      const fullPath = join13(dir, entry);
       let st;
       try {
         st = await stat3(fullPath);
@@ -7633,7 +7807,7 @@ async function buildCollectionIndex(paths, options = {}) {
     for (const file of files) {
       let content;
       try {
-        content = await readFile9(file, "utf8");
+        content = await readFile10(file, "utf8");
       } catch {
         continue;
       }
@@ -8958,8 +9132,8 @@ async function executeLLMTurn(task, tools, history, model, systemPrompt, stream,
 }
 async function buildRepoMapContext(task, projectDir) {
   try {
-    const { homedir: homedir14 } = await import("node:os");
-    if (projectDir === homedir14() || projectDir === "/") return "";
+    const { homedir: homedir15 } = await import("node:os");
+    if (projectDir === homedir15() || projectDir === "/") return "";
     const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
     const index = await buildCollectionIndex2([projectDir], { includeCode: true });
     if (index.chunkCount === 0) return "";
@@ -9023,11 +9197,16 @@ ${freshRead.output.slice(0, 3e3)}`,
 async function runAgenticWorker(task, sandbox, options = {}) {
   const constraintLevel = options.constraintLevel || (options.persona ? constraintLevelForPersona(options.persona) : "full");
   const adapter = new GeminiToolAdapter(sandbox, constraintLevel);
-  const allTools = adapter.getToolDeclarations();
+  const rawTools = adapter.getToolDeclarations();
+  const toolFilterEnabled = process.env.CREW_TOOL_FILTER !== "false";
+  const allTools = toolFilterEnabled ? filterToolsForTask(rawTools, task) : rawTools;
   const model = options.model || process.env.CREW_EXECUTION_MODEL || "";
   const maxTurns = options.maxTurns ?? 25;
   const projectDir = options.projectDir || sandbox.getBaseDir() || process.cwd();
   const verbose = options.verbose ?? Boolean(process.env.CREW_DEBUG);
+  if (verbose && toolFilterEnabled && allTools.length < rawTools.length) {
+    console.log(describeFiltering(task, rawTools.length, allTools.length));
+  }
   if (!globalThis.__crewAdaptiveWeightsLoaded) {
     try {
       const { extractTrajectoryFeedback } = await import("../../lib/autoharness/index.mjs");
@@ -9043,7 +9222,8 @@ async function runAgenticWorker(task, sandbox, options = {}) {
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const scratchDir = createScratchpad(sessionId);
   const baseSystemPrompt = options.systemPrompt || L3_SYSTEM_PROMPT;
-  const systemPrompt = baseSystemPrompt + getScratchpadInstructions(scratchDir) + TOOL_RESULT_CLEARING_PROMPT;
+  const topOfMind = await loadTopOfMind(projectDir);
+  const systemPrompt = baseSystemPrompt + getScratchpadInstructions(scratchDir) + TOOL_RESULT_CLEARING_PROMPT + topOfMind;
   const stream = options.stream ?? !process.env.CREW_NO_STREAM;
   const jit = options.priorDiscoveredFiles?.length ? JITContextTracker.fromPrior(options.priorDiscoveredFiles) : new JITContextTracker();
   const resolvedProvider = await resolveProvider(model, options.tier);
@@ -9315,6 +9495,8 @@ var init_agentic_executor = __esm({
     init_agentic_guidance();
     init_patch_critic();
     init_structured_history();
+    init_tool_filter();
+    init_top_of_mind();
     init_oauth_keychain();
     init_openai_oauth();
     init_gemini_oauth();
@@ -10700,10 +10882,10 @@ var init_structured_json = __esm({
 });
 
 // src/prompts/dual-l2.ts
-import { mkdir as mkdir5, writeFile as writeFile5, readFile as readFile10 } from "node:fs/promises";
-import { resolve as resolve6, join as join13, relative as relative3 } from "node:path";
+import { mkdir as mkdir5, writeFile as writeFile5, readFile as readFile11 } from "node:fs/promises";
+import { resolve as resolve6, join as join14, relative as relative3 } from "node:path";
 import { execSync as execSync4 } from "node:child_process";
-import { existsSync as existsSync6 } from "node:fs";
+import { existsSync as existsSync7 } from "node:fs";
 var DualL2Planner;
 var init_dual_l2 = __esm({
   "src/prompts/dual-l2.ts"() {
@@ -10779,8 +10961,17 @@ ${context}`.toLowerCase();
           "across the repo"
         ];
         if (broadSignals.some((signal) => text.includes(signal))) return false;
+        const numberedItems = text.match(/\d+\)/g) || text.match(/\d+\.\s/g) || [];
+        if (numberedItems.length >= 3) return false;
+        const hasTests = /\b(test|spec|assert)\b/.test(text);
+        const hasImpl = /\b(endpoint|api|function|class|module|component)\b/.test(text);
+        const hasDocs = /\b(readme|doc|documentation)\b/.test(text);
+        if ([hasTests, hasImpl, hasDocs].filter(Boolean).length >= 2) return false;
         const paths = this.extractAllowedPaths(task);
         const narrowIntent = /(create|write|update|modify|edit|add|fix|rename)\b/.test(text);
+        const multiDeliverable = /(also create|also add|and create|and add|then create|then add)/i.test(text);
+        const multiBug = /(two bugs|both bugs|multiple bugs|bug.*and.*bug|\(1\).*\(2\))/i.test(text);
+        if (multiDeliverable || multiBug) return false;
         return narrowIntent && paths.length > 0 && paths.length <= 3;
       }
       buildLightweightPlan(task, context, traceId) {
@@ -10804,6 +10995,7 @@ ${context}`.toLowerCase();
 - Limit edits to explicit task paths.`,
           scaffold: "",
           contractTests: "",
+          design: "",
           definitionOfDone: "",
           goldenBenchmarks: "",
           acceptanceCriteria: [
@@ -10816,6 +11008,7 @@ ${context}`.toLowerCase();
             architecture: "",
             scaffold: "",
             contractTests: "",
+            design: "",
             definitionOfDone: "",
             goldenBenchmarks: ""
           }
@@ -10903,10 +11096,10 @@ ${context}`.toLowerCase();
             sections.push(`## Project Structure
 ${paths.join("\n")}`);
           }
-          const pkgPath = join13(cwd, "package.json");
-          if (existsSync6(pkgPath)) {
+          const pkgPath = join14(cwd, "package.json");
+          if (existsSync7(pkgPath)) {
             try {
-              const pkg = JSON.parse(await readFile10(pkgPath, "utf8"));
+              const pkg = JSON.parse(await readFile11(pkgPath, "utf8"));
               sections.push(`## package.json
 Name: ${pkg.name}
 Version: ${pkg.version}
@@ -10934,7 +11127,7 @@ ${relPaths.join("\n")}`);
           const topFiles = [...relevantFiles].slice(0, 5);
           for (const file of topFiles) {
             try {
-              const content = await readFile10(file, "utf8");
+              const content = await readFile11(file, "utf8");
               const relPath = relative3(cwd, file);
               const lines = content.split("\n");
               const keyLines = lines.filter(
@@ -10978,9 +11171,9 @@ ${gitLog}`);
             sections.push(`## Project Structure
 ${relPaths.join("\n")}`);
           }
-          const pkgPath = join13(cwd, "package.json");
-          if (existsSync6(pkgPath)) {
-            const pkg = await readFile10(pkgPath, "utf8").catch(() => "");
+          const pkgPath = join14(cwd, "package.json");
+          if (existsSync7(pkgPath)) {
+            const pkg = await readFile11(pkgPath, "utf8").catch(() => "");
             if (pkg) {
               try {
                 const parsed = JSON.parse(pkg);
@@ -11005,7 +11198,7 @@ ${files.join("\n")}`);
           const relevantFiles = this.shellSafe(`grep -rl "${uniqueKeywords[0] || "index"}" ${cwd} --include="*.ts" --include="*.js" --include="*.mjs" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" 2>/dev/null | head -3`);
           if (relevantFiles) {
             for (const file of relevantFiles.split("\n").filter(Boolean).slice(0, 3)) {
-              const content = await readFile10(file, "utf8").catch(() => "");
+              const content = await readFile11(file, "utf8").catch(() => "");
               if (content) {
                 const relPath = relative3(cwd, file);
                 const preview = content.split("\n").slice(0, 80).join("\n");
@@ -11085,15 +11278,16 @@ ${repoContext}` : context;
         const baseDir = process.env.CREW_PIPELINE_ARTIFACT_DIR ? resolve6(process.env.CREW_PIPELINE_ARTIFACT_DIR) : resolve6(process.cwd(), ".crew", "pipeline-artifacts", traceId);
         await mkdir5(baseDir, { recursive: true });
         const files = {
-          pdd: join13(baseDir, "PDD.md"),
-          roadmap: join13(baseDir, "ROADMAP.md"),
-          architecture: join13(baseDir, "ARCH.md"),
-          scaffold: join13(baseDir, "SCAFFOLD.md"),
-          contractTests: join13(baseDir, "CONTRACT-TESTS.md"),
-          definitionOfDone: join13(baseDir, "DOD.md"),
-          goldenBenchmarks: join13(baseDir, "GOLDEN-BENCHMARKS.md")
+          pdd: join14(baseDir, "PDD.md"),
+          roadmap: join14(baseDir, "ROADMAP.md"),
+          architecture: join14(baseDir, "ARCH.md"),
+          scaffold: join14(baseDir, "SCAFFOLD.md"),
+          contractTests: join14(baseDir, "CONTRACT-TESTS.md"),
+          design: join14(baseDir, "DESIGN.md"),
+          definitionOfDone: join14(baseDir, "DOD.md"),
+          goldenBenchmarks: join14(baseDir, "GOLDEN-BENCHMARKS.md")
         };
-        await Promise.all([
+        const writeOps = [
           writeFile5(files.pdd, coreResult.pdd, "utf8"),
           writeFile5(files.roadmap, coreResult.roadmap, "utf8"),
           writeFile5(files.architecture, coreResult.architecture, "utf8"),
@@ -11101,13 +11295,18 @@ ${repoContext}` : context;
           writeFile5(files.contractTests, implResult.contractTests, "utf8"),
           writeFile5(files.definitionOfDone, gateResult.definitionOfDone, "utf8"),
           writeFile5(files.goldenBenchmarks, gateResult.goldenBenchmarks, "utf8")
-        ]);
+        ];
+        if (implResult.design) {
+          writeOps.push(writeFile5(files.design, implResult.design, "utf8"));
+        }
+        await Promise.all(writeOps);
         console.log("[L2A Planning] \u2705 All artifacts generated:");
         console.log(`  PDD.md: ${coreResult.pdd.length} chars`);
         console.log(`  ROADMAP.md: ${coreResult.roadmap.length} chars`);
         console.log(`  ARCH.md: ${coreResult.architecture.length} chars`);
         console.log(`  SCAFFOLD.md: ${implResult.scaffold.length} chars`);
         console.log(`  CONTRACT-TESTS.md: ${implResult.contractTests.length} chars`);
+        if (implResult.design) console.log(`  DESIGN.md: ${implResult.design.length} chars`);
         console.log(`  DOD.md: ${gateResult.definitionOfDone.length} chars`);
         console.log(`  GOLDEN-BENCHMARKS.md: ${gateResult.goldenBenchmarks.length} chars`);
         console.log(`  Dir: ${baseDir}`);
@@ -11117,6 +11316,7 @@ ${repoContext}` : context;
           architecture: coreResult.architecture,
           scaffold: implResult.scaffold,
           contractTests: implResult.contractTests,
+          design: implResult.design || "",
           definitionOfDone: gateResult.definitionOfDone,
           goldenBenchmarks: gateResult.goldenBenchmarks,
           acceptanceCriteria: coreResult.acceptanceCriteria,
@@ -11213,7 +11413,7 @@ Acceptance Criteria: ${coreContext.acceptanceCriteria.slice(0, 3).join("; ")}`,
           },
           {
             type: "constraints",
-            content: `Generate TWO implementation artifacts as compact bullet lists:
+            content: `Generate THREE implementation artifacts as compact bullet lists:
 
 **1. SCAFFOLD.md** (Bootstrap checklist):
 - File tree (bullet list: path + 1-line purpose)
@@ -11226,12 +11426,24 @@ Acceptance Criteria: ${coreContext.acceptanceCriteria.slice(0, 3).join("; ")}`,
 - Format: "Test ac-1: Given X, When Y, Then Z"
 - Include file path where test should live
 
+**3. DESIGN.md** (UI/UX design system \u2014 generate ONLY if the task involves frontend, UI, components, pages, or user-facing features. If the task is purely backend/API/CLI, set design to empty string ""):
+- Color tokens (primary, secondary, accent, background, surface, text, error, success \u2014 as CSS custom properties)
+- Typography scale (font families, sizes for h1-h4, body, small, mono \u2014 with line heights)
+- Spacing system (4px base unit, named sizes: xs=4, sm=8, md=16, lg=24, xl=32, xxl=48)
+- Component patterns (card, button, input, badge, modal, nav \u2014 with states: default, hover, active, disabled, focus)
+- Layout rules (max-width, grid columns, breakpoints for mobile/tablet/desktop)
+- Accessibility requirements (WCAG AA contrast ratios, focus indicators, reduced motion, aria patterns)
+- Dark/light theme token mappings
+- Animation guidelines (duration: fast=100ms, normal=200ms, slow=300ms; easing: ease-out for entrances, ease-in for exits)
+
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "scaffold": "# SCAFFOLD\\n\\n## Files\\n- src/index.ts: entry point\\n\\n## Build\\n- npm run build",
-  "contractTests": "# CONTRACT TESTS\\n\\n- Test ac-1: Given ..., When ..., Then ...\\n  File: tests/ac1.test.ts"
+  "contractTests": "# CONTRACT TESTS\\n\\n- Test ac-1: Given ..., When ..., Then ...\\n  File: tests/ac1.test.ts",
+  "design": "# DESIGN SYSTEM\\n\\n## Colors\\n- --color-primary: #818cf8\\n..."
 }
 
+If the task has NO frontend/UI component, set "design": "".
 CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
             priority: 3
           }
@@ -11241,7 +11453,7 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
           model: this.getL2AModel(),
           temperature: 0,
           // Deterministic for JSON
-          maxTokens: 3e3,
+          maxTokens: 4e3,
           jsonMode: true
         });
         if (!result2.success) {
@@ -11250,11 +11462,12 @@ CRITICAL: Escape \\n for newlines, \\" for quotes. Return JSON only.`,
         const parsed = await this.parseStructuredJson(
           result2.result,
           "Implementation artifacts (Pass 2)",
-          '{"scaffold":"...","contractTests":"..."}'
+          '{"scaffold":"...","contractTests":"...","design":"..."}'
         );
         return {
           scaffold: String(parsed.scaffold || `# SCAFFOLD\\n\\n- Initialize project\\n- Add scripts\\n`).trim(),
-          contractTests: String(parsed.contractTests || `# CONTRACT TESTS\\n\\n- Map acceptance criteria to tests\\n`).trim()
+          contractTests: String(parsed.contractTests || `# CONTRACT TESTS\\n\\n- Map acceptance criteria to tests\\n`).trim(),
+          design: String(parsed.design || "").trim()
         };
       }
       /**
@@ -11353,6 +11566,9 @@ ${planningArtifacts.scaffold}
 
 [CONTRACT-TESTS.md]
 ${planningArtifacts.contractTests}
+${planningArtifacts.design ? `
+[DESIGN.md]
+${planningArtifacts.design}` : ""}
 
 [DOD.md]
 ${planningArtifacts.definitionOfDone}
@@ -11370,7 +11586,7 @@ ${planningArtifacts.goldenBenchmarks}`,
     {
       "id": "unique-id",
       "description": "what to do",
-      "requiredPersona": "executor-code",
+      "requiredPersona": "crew-coder-back",
       "dependencies": ["id1", "id2"],
       "estimatedComplexity": "low|medium|high",
       "requiredCapabilities": ["code-generation", "file-write", "code-reading"],
@@ -11382,12 +11598,20 @@ ${planningArtifacts.goldenBenchmarks}`,
     }
   ],
   "totalComplexity": 1-10,
-  "requiredPersonas": ["executor-code"],
+  "requiredPersonas": ["crew-coder-back", "crew-qa", "crew-copywriter"],
   "estimatedCost": 0.001
 }
 
 Rules:
-- CRITICAL: In standalone crew-cli mode, ALL units MUST use requiredPersona="executor-code" (the local L3 worker). Do NOT use crew-coder, crew-qa, or any remote agent personas.
+- Use requiredPersona to indicate the TYPE of work. Available personas:
+  - "executor-code" \u2014 general coding (default, full tool access)
+  - "crew-coder-back" \u2014 backend/API implementation
+  - "crew-coder-front" \u2014 frontend/UI implementation
+  - "crew-qa" \u2014 writing tests, test repair, validation
+  - "crew-copywriter" \u2014 documentation, README, guides
+  - "crew-security" \u2014 security review, auth implementation
+  - "crew-fixer" \u2014 bug fixes, debugging
+- Choose the most specific persona for each unit. Use "executor-code" only when no specialized persona fits.
 - requiredCapabilities can be: ["code-generation", "file-write", "code-reading"] only. NO "filesystem" or other non-existent capabilities.
 - Every unit must include at least one sourceRefs entry.
 - sourceRefs must reference one or more of: PDD.md, ROADMAP.md, ARCH.md, CONTRACT-TESTS.md, DOD.md, SCAFFOLD.md, GOLDEN-BENCHMARKS.md.
@@ -11458,18 +11682,20 @@ Work graph to validate:
 ${JSON.stringify(workGraph, null, 2)}
 
 Available capability matrix (crew-cli standalone mode):
-- executor-code: ALL basic capabilities (code-generation, file-write, code-reading, testing)
+- All personas run locally via the same L3 executor with persona-specific prompts
+- Supported personas: executor-code, crew-coder-back, crew-coder-front, crew-qa, crew-copywriter, crew-security, crew-fixer
 
 Validate for:
 1. Security risks (file access outside project, network calls, shell execution)
 2. Resource costs (estimated tokens, time, API calls)
-3. Persona requirements (ALL units must use requiredPersona="executor-code" in standalone mode)
+3. Scope discipline (units stay within allowedPaths)
 4. Fallback strategy (what if a unit fails?)
 
 CRITICAL VALIDATIONS:
-- REJECT if any unit has requiredPersona != "executor-code" (remote agents like crew-coder, crew-qa not available in standalone mode)
+- APPROVE all supported personas (executor-code, crew-coder-back, crew-qa, crew-copywriter, etc.) \u2014 they all run locally
 - APPROVE all file operations to project directory (expected and safe in standalone mode)
-- APPROVE all requiredCapabilities for executor-code (no capability restrictions for local L3 worker)
+- APPROVE all requiredCapabilities (no capability restrictions for local L3 worker)
+- REJECT only if units access files outside the project or make dangerous external calls
 
 Return ONLY valid JSON:
 {
@@ -11486,9 +11712,9 @@ Return ONLY valid JSON:
             type: "constraints",
             content: `Cost limit: $0.50 per task
 Risk tolerance: medium
-APPROVE: All executor-code units with any capabilities
+APPROVE: All supported personas (executor-code, crew-coder-back, crew-qa, crew-copywriter, crew-security, crew-fixer, crew-coder-front)
 APPROVE: File writes to project directory
-REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in standalone mode`,
+APPROVE: All requiredCapabilities for local execution`,
             priority: 2
           }
         ];
@@ -11601,8 +11827,8 @@ REJECT: Remote agent personas (crew-coder, crew-qa, etc.) - not available in sta
 
 // src/pipeline/context-pack.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync3, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join as join14, resolve as resolve7 } from "node:path";
+import { existsSync as existsSync8, mkdirSync as mkdirSync2, readFileSync as readFileSync3, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { join as join15, resolve as resolve7 } from "node:path";
 var ContextPackManager;
 var init_context_pack = __esm({
   "src/pipeline/context-pack.ts"() {
@@ -11618,9 +11844,9 @@ var init_context_pack = __esm({
         this.compactCache();
         const key = this.computePackKey(artifacts);
         const id = `pack-${key.slice(0, 12)}`;
-        const path3 = join14(this.cacheDir, `${key}.json`);
+        const path3 = join15(this.cacheDir, `${key}.json`);
         const nowIso7 = (/* @__PURE__ */ new Date()).toISOString();
-        if (existsSync7(path3)) {
+        if (existsSync8(path3)) {
           try {
             const parsed = JSON.parse(readFileSync3(path3, "utf8"));
             const chunks2 = Array.isArray(parsed?.chunks) ? parsed.chunks : [];
@@ -11706,7 +11932,7 @@ ${c.text}`).join("\n\n");
         return Math.min(24 * 14, Math.floor(raw));
       }
       ensureCacheDir() {
-        if (!existsSync7(this.cacheDir)) {
+        if (!existsSync8(this.cacheDir)) {
           mkdirSync2(this.cacheDir, { recursive: true });
         }
       }
@@ -11723,11 +11949,11 @@ ${c.text}`).join("\n\n");
         return createHash2("sha256").update(body).digest("hex");
       }
       compactCache() {
-        if (!existsSync7(this.cacheDir)) return;
+        if (!existsSync8(this.cacheDir)) return;
         const now = Date.now();
         const ttlMs = this.ttlHours * 60 * 60 * 1e3;
         for (const entry of readdirSync(this.cacheDir)) {
-          const full = join14(this.cacheDir, entry);
+          const full = join15(this.cacheDir, entry);
           try {
             const stat7 = statSync(full);
             if (now - stat7.mtimeMs > ttlMs) {
@@ -11772,8 +11998,8 @@ ${c.text}`).join("\n\n");
 
 // src/pipeline/agent-memory.ts
 import { randomUUID as randomUUID6 } from "node:crypto";
-import { existsSync as existsSync8, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
-import { join as join15, resolve as resolve8 } from "node:path";
+import { existsSync as existsSync9, mkdirSync as mkdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { join as join16, resolve as resolve8 } from "node:path";
 function getPipelineMemory(agentId = "pipeline") {
   if (!_pipelineMemory) {
     _pipelineMemory = new AgentMemory(agentId);
@@ -11920,7 +12146,7 @@ var init_agent_memory = __esm({
       }
       loadOrCreate(agentId) {
         const path3 = this.getStatePath(agentId);
-        if (existsSync8(path3)) {
+        if (existsSync9(path3)) {
           try {
             const raw = readFileSync4(path3, "utf8");
             return JSON.parse(raw);
@@ -11941,10 +12167,10 @@ var init_agent_memory = __esm({
         writeFileSync2(path3, JSON.stringify(this.state, null, 2), "utf8");
       }
       getStatePath(agentId) {
-        return join15(this.storageDir, `${agentId}.json`);
+        return join16(this.storageDir, `${agentId}.json`);
       }
       ensureStorageDir() {
-        if (!existsSync8(this.storageDir)) {
+        if (!existsSync9(this.storageDir)) {
           mkdirSync3(this.storageDir, { recursive: true });
         }
       }
@@ -12016,12 +12242,12 @@ var init_json_schemas = __esm({
 
 // src/metrics/json-parse.ts
 import { appendFile, mkdir as mkdir6 } from "node:fs/promises";
-import { join as join16, resolve as resolve9 } from "node:path";
+import { join as join17, resolve as resolve9 } from "node:path";
 async function recordJsonParseMetric(entry) {
   try {
     const dir = resolve9(process.cwd(), ".crew");
     await mkdir6(dir, { recursive: true });
-    const path3 = join16(dir, "json-parse-metrics.jsonl");
+    const path3 = join17(dir, "json-parse-metrics.jsonl");
     await appendFile(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
   } catch {
@@ -12360,8 +12586,8 @@ var init_qa_gate = __esm({
 });
 
 // src/context/project-context.ts
-import { readFile as readFile11, readdir as readdir5, stat as stat5 } from "node:fs/promises";
-import { join as join17, extname as extname3, relative as relative4 } from "node:path";
+import { readFile as readFile12, readdir as readdir5, stat as stat5 } from "node:fs/promises";
+import { join as join18, extname as extname3, relative as relative4 } from "node:path";
 async function buildProjectContext(projectRoot) {
   const fileTree = [];
   await walkDir(projectRoot, projectRoot, fileTree, 0, 3, 500);
@@ -12390,7 +12616,7 @@ async function walkDir(base, dir, entries, depth, maxDepth, maxFiles) {
     if (entries.length >= maxFiles) break;
     if (name.startsWith(".") && name !== ".gitignore") continue;
     if (IGNORE_DIRS.has(name)) continue;
-    const fullPath = join17(dir, name);
+    const fullPath = join18(dir, name);
     try {
       const s = await stat5(fullPath);
       const relPath = relative4(base, fullPath);
@@ -12408,7 +12634,7 @@ async function walkDir(base, dir, entries, depth, maxDepth, maxFiles) {
 async function detectConfig(root) {
   const config = {};
   try {
-    const pkg = JSON.parse(await readFile11(join17(root, "package.json"), "utf8"));
+    const pkg = JSON.parse(await readFile12(join18(root, "package.json"), "utf8"));
     config.name = pkg.name;
     config.dependencies = pkg.dependencies;
     config.devDependencies = pkg.devDependencies;
@@ -12420,13 +12646,13 @@ async function detectConfig(root) {
   } catch {
   }
   try {
-    await stat5(join17(root, "tsconfig.json"));
+    await stat5(join18(root, "tsconfig.json"));
     config.tsconfig = true;
   } catch {
     config.tsconfig = false;
   }
   try {
-    const gi = await readFile11(join17(root, ".gitignore"), "utf8");
+    const gi = await readFile12(join18(root, ".gitignore"), "utf8");
     config.gitignorePatterns = gi.split("\n").filter((l) => l.trim() && !l.startsWith("#")).slice(0, 20);
   } catch {
   }
@@ -12579,7 +12805,7 @@ var init_project_context = __esm({
 });
 
 // src/executor/reviewer.ts
-import { readFile as readFile12 } from "node:fs/promises";
+import { readFile as readFile13 } from "node:fs/promises";
 import { resolve as resolve10 } from "node:path";
 async function loadFileSnippets(input) {
   const snippets = [];
@@ -12588,7 +12814,7 @@ async function loadFileSnippets(input) {
   for (const relPath of input.filesChanged.slice(0, 4)) {
     try {
       const staged = input.stagedContentForPath?.(relPath);
-      const content = staged ?? await readFile12(resolve10(input.projectDir, relPath), "utf8");
+      const content = staged ?? await readFile13(resolve10(input.projectDir, relPath), "utf8");
       const trimmed = content.slice(0, 1800);
       if (chars + trimmed.length > limit) break;
       snippets.push(`## ${relPath}
@@ -13049,10 +13275,10 @@ __export(codebase_rag_exports, {
   shouldUseRag: () => shouldUseRag
 });
 import { execSync as execSync5 } from "node:child_process";
-import { readFile as readFile13, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
-import { existsSync as existsSync9 } from "node:fs";
+import { readFile as readFile14, writeFile as writeFile6, mkdir as mkdir7 } from "node:fs/promises";
+import { existsSync as existsSync10 } from "node:fs";
 import { createHash as createHash3 } from "node:crypto";
-import { relative as relative5, join as join18 } from "node:path";
+import { relative as relative5, join as join19 } from "node:path";
 function extractKeywords(query) {
   return (query.toLowerCase().match(/\b[a-z]{3,}\b/g) || []).filter((kw) => !STOP_WORDS.has(kw));
 }
@@ -13157,7 +13383,7 @@ async function expandWithImports(files, cwd, maxDepth = 1) {
   try {
     const graph = await buildRepositoryGraph(cwd);
     for (const file of files) {
-      const node = graph.nodes.find((n) => n.path === file || join18(cwd, n.path) === file);
+      const node = graph.nodes.find((n) => n.path === file || join19(cwd, n.path) === file);
       if (node) {
         for (const importPath of node.imports.slice(0, 5)) expanded.add(importPath);
         for (const importedByPath of node.importedBy.slice(0, 3)) expanded.add(importedByPath);
@@ -13212,8 +13438,8 @@ async function autoLoadRelevantFiles(query, cwd, options = {}) {
   finalScored.sort((a, b) => b.score - a.score);
   for (const { file } of finalScored.slice(0, maxFiles)) {
     try {
-      const fullPath = join18(cwd, file);
-      const content = await readFile13(fullPath, "utf8");
+      const fullPath = join19(cwd, file);
+      const content = await readFile14(fullPath, "utf8");
       if (charsUsed + content.length > charBudget) break;
       const relPath = relative5(cwd, file);
       contextParts.push(`
@@ -13240,9 +13466,9 @@ function shouldUseRag(query) {
   return hasExecutionIntent || hasCodeReference || hasFileOperation;
 }
 async function rebuildEmbeddingsIndex(cwd, cacheDir) {
-  const dir = cacheDir || join18(cwd, ".crew", "rag-cache");
-  const indexPath = join18(dir, "embeddings.json");
-  if (existsSync9(indexPath)) {
+  const dir = cacheDir || join19(cwd, ".crew", "rag-cache");
+  const indexPath = join19(dir, "embeddings.json");
+  if (existsSync10(indexPath)) {
     await writeFile6(indexPath, "[]", "utf8");
   }
   const index = CodebaseIndex.getInstance(cwd);
@@ -13290,7 +13516,7 @@ var init_codebase_rag = __esm({
         this.loaded = false;
         this.building = false;
         this.cwd = cwd;
-        this.cacheDir = join18(cwd, ".crew", "rag-cache");
+        this.cacheDir = join19(cwd, ".crew", "rag-cache");
         this.provider = detectEmbeddingProvider();
       }
       static {
@@ -13304,23 +13530,23 @@ var init_codebase_rag = __esm({
         return inst;
       }
       indexPath() {
-        return join18(this.cacheDir, "embeddings.json");
+        return join19(this.cacheDir, "embeddings.json");
       }
       metaPath() {
-        return join18(this.cacheDir, "index-meta.json");
+        return join19(this.cacheDir, "index-meta.json");
       }
       /** Load index from disk if not already loaded. */
       async load() {
         if (this.loaded) return;
         try {
-          if (existsSync9(this.indexPath())) {
-            const raw = await readFile13(this.indexPath(), "utf8");
+          if (existsSync10(this.indexPath())) {
+            const raw = await readFile14(this.indexPath(), "utf8");
             this.entries = JSON.parse(raw);
             this.entryMap.clear();
             for (const e of this.entries) this.entryMap.set(e.file, e);
           }
-          if (existsSync9(this.metaPath())) {
-            this.meta = JSON.parse(await readFile13(this.metaPath(), "utf8"));
+          if (existsSync10(this.metaPath())) {
+            this.meta = JSON.parse(await readFile14(this.metaPath(), "utf8"));
           }
         } catch {
         }
@@ -13379,7 +13605,7 @@ var init_codebase_rag = __esm({
             const work = [];
             for (const file of batch) {
               try {
-                const content = await readFile13(join18(this.cwd, file), "utf8");
+                const content = await readFile14(join19(this.cwd, file), "utf8");
                 if (content.length < 10) continue;
                 if (content.length > 1e5) continue;
                 const hash = contentHash(content);
@@ -13452,8 +13678,8 @@ var init_codebase_rag = __esm({
 
 // src/pipeline/unified.ts
 import { randomUUID as randomUUID7 } from "crypto";
-import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile14 } from "node:fs/promises";
-import { resolve as resolve11, join as join19, normalize } from "node:path";
+import { appendFile as appendFile2, mkdir as mkdir8, readFile as readFile15 } from "node:fs/promises";
+import { resolve as resolve11, join as join20, normalize } from "node:path";
 var UnifiedPipeline;
 var init_unified = __esm({
   "src/pipeline/unified.ts"() {
@@ -13545,7 +13771,7 @@ var init_unified = __esm({
       inferEffortFromInput(text) {
         const lower = String(text || "").toLowerCase();
         if (lower.length < 120 && /\b(typo|rename|small|one line|one-liner|quick|minor|simple)\b/.test(lower)) return "low";
-        if (lower.length > 500 || /\b(api|refactor|architecture|pipeline|multi-file|parallel|worker|oauth|reviewer)\b/.test(lower)) return "high";
+        if (lower.length > 500 || /\b(api|refactor|architecture|pipeline|multi-file|parallel|worker|oauth|reviewer|two files|both files|multiple files|create.*test|extract.*into|also create)\b/.test(lower)) return "high";
         return "medium";
       }
       getExecutionEffort(taskOrRequest, fallback) {
@@ -13658,7 +13884,7 @@ var init_unified = __esm({
         const staged = this.sandbox?.getStagedContent?.(filePath);
         if (typeof staged === "string") return staged;
         try {
-          return await readFile14(resolve11(this.sandbox?.getBaseDir() || process.cwd(), filePath), "utf8");
+          return await readFile15(resolve11(this.sandbox?.getBaseDir() || process.cwd(), filePath), "utf8");
         } catch {
           return void 0;
         }
@@ -13937,7 +14163,7 @@ ${this.buildExecutionAuditContext(executionResults)}`;
           }
           try {
             const fullPath = resolve11(baseDir, relPath);
-            const content = await readFile14(fullPath, "utf8");
+            const content = await readFile15(fullPath, "utf8");
             if (verbose) console.log(`[QA-det] ${relPath}: found on disk at ${fullPath} (${content.length} bytes)`);
             contents.set(relPath, content);
           } catch (err) {
@@ -14123,7 +14349,7 @@ ${fixTask.goal}` : fixTask.goal, {
         try {
           const dir = resolve11(process.cwd(), ".crew");
           await mkdir8(dir, { recursive: true });
-          const path3 = join19(dir, "pipeline-metrics.jsonl");
+          const path3 = join20(dir, "pipeline-metrics.jsonl");
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...entry })}
 `, "utf8");
         } catch {
@@ -14133,7 +14359,7 @@ ${fixTask.goal}` : fixTask.goal, {
         try {
           const dir = resolve11(process.cwd(), ".crew", "pipeline-runs");
           await mkdir8(dir, { recursive: true });
-          const path3 = join19(dir, `${traceId}.jsonl`);
+          const path3 = join20(dir, `${traceId}.jsonl`);
           await appendFile2(path3, `${JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), ...payload })}
 `, "utf8");
         } catch {
@@ -15036,22 +15262,22 @@ ${JSON.stringify(plan.workGraph, null, 2)}`,
         const projectDir = this.sandbox?.baseDir || process.cwd();
         let projectContext = "";
         try {
-          const { readdirSync: readdirSync2, statSync: statSync2, readFileSync: readFileSync8, existsSync: existsSync24 } = await import("node:fs");
-          const { join: join47 } = await import("node:path");
+          const { readdirSync: readdirSync2, statSync: statSync2, readFileSync: readFileSync8, existsSync: existsSync26 } = await import("node:fs");
+          const { join: join49 } = await import("node:path");
           const entries = readdirSync2(projectDir).filter((f) => !f.startsWith(".") && f !== "node_modules").slice(0, 30);
           const fileList = entries.map((f) => {
-            const s = statSync2(join47(projectDir, f));
+            const s = statSync2(join49(projectDir, f));
             return s.isDirectory() ? `${f}/` : f;
           });
           projectContext = `Project files: ${fileList.join(", ")}`;
-          const hasPackageJson = existsSync24(join47(projectDir, "package.json"));
-          const hasIndexHtml = existsSync24(join47(projectDir, "index.html"));
-          const hasTsConfig = existsSync24(join47(projectDir, "tsconfig.json"));
+          const hasPackageJson = existsSync26(join49(projectDir, "package.json"));
+          const hasIndexHtml = existsSync26(join49(projectDir, "index.html"));
+          const hasTsConfig = existsSync26(join49(projectDir, "tsconfig.json"));
           if (hasIndexHtml && !hasTsConfig) {
             projectContext += "\nTech: Static HTML/CSS/JS site (vanilla, no build step, no Node.js modules). All JS must be browser-compatible (no require/import/export, no Node APIs).";
           } else if (hasPackageJson) {
             try {
-              const pkg = JSON.parse(readFileSync8(join47(projectDir, "package.json"), "utf8"));
+              const pkg = JSON.parse(readFileSync8(join49(projectDir, "package.json"), "utf8"));
               const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).slice(0, 10);
               projectContext += `
 Tech: Node.js project. Dependencies: ${deps.join(", ")}`;
@@ -15060,7 +15286,7 @@ Tech: Node.js project. Dependencies: ${deps.join(", ")}`;
           }
           if (hasIndexHtml) {
             try {
-              const html = readFileSync8(join47(projectDir, "index.html"), "utf8");
+              const html = readFileSync8(join49(projectDir, "index.html"), "utf8");
               projectContext += `
 index.html: ${html.length} chars, ${(html.match(/<script/g) || []).length} script tags, ${(html.match(/<link.*css/g) || []).length} CSS links`;
             } catch {
@@ -15332,7 +15558,7 @@ ${task.goal}` : task.goal;
         const parsed = this.parseWorkerOutput(String(result2.output || ""));
         const built = this.buildWorkerExecutionResult(task, parsed, result2);
         if (process.env.CREW_DEBUG_PIPELINE) {
-          console.log(`[Pipeline] Built: filesChanged=${built.filesChanged.join(",")} shellResults=${built.shellResults.length} verificationPassed=${built.verificationPassed} escalation=${built.escalationNeeded} reason=${built.escalationReason || "none"}`);
+          console.log(`[Pipeline] Built: filesChanged=${built.filesChanged.join(",")} shellResults=${(built.shellResults || []).length} verificationPassed=${built.verificationPassed} escalation=${built.escalationNeeded} reason=${built.escalationReason || "none"}`);
         }
         return this.reviewAndFixWorkerResult(task, built, traceId, context, sessionId);
       }
@@ -15914,7 +16140,7 @@ __export(orchestrator_exports, {
   RouteDecision: () => RouteDecision,
   WorkerPool: () => WorkerPool
 });
-import { readFile as readFile15 } from "node:fs/promises";
+import { readFile as readFile16 } from "node:fs/promises";
 var ROUTING_SYSTEM_PROMPT, RouteDecision, Orchestrator;
 var init_orchestrator = __esm({
   "src/orchestrator/index.ts"() {
@@ -16051,8 +16277,8 @@ Return ONLY a JSON object in this exact format:
       async getGeminiADCToken() {
         try {
           const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || `${process.env.HOME}/.config/gcloud/application_default_credentials.json`;
-          const { readFile: readFile38 } = await import("node:fs/promises");
-          const credentialsJson = await readFile38(adcPath, "utf8");
+          const { readFile: readFile40 } = await import("node:fs/promises");
+          const credentialsJson = await readFile40(adcPath, "utf8");
           const credentials = JSON.parse(credentialsJson);
           if (credentials.type !== "authorized_user" || !credentials.refresh_token) {
             return null;
@@ -16509,7 +16735,7 @@ ${task}` : task;
                 this.logger.info(`Detected edit block for ${filePath}`);
                 let originalContent = "";
                 try {
-                  originalContent = await readFile15(filePath, "utf8");
+                  originalContent = await readFile16(filePath, "utf8");
                 } catch {
                   originalContent = "";
                 }
@@ -16543,8 +16769,8 @@ var agentkeeper_exports = {};
 __export(agentkeeper_exports, {
   AgentKeeper: () => AgentKeeper
 });
-import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile18, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
-import { dirname as dirname5, join as join22 } from "node:path";
+import { appendFile as appendFile3, mkdir as mkdir10, readFile as readFile19, stat as stat6, writeFile as writeFile8 } from "node:fs/promises";
+import { dirname as dirname5, join as join23 } from "node:path";
 import { randomUUID as randomUUID8 } from "node:crypto";
 function tokenize2(text) {
   return new Set(
@@ -16567,7 +16793,7 @@ var init_agentkeeper = __esm({
       constructor(baseDir, options = {}) {
         this.writeCount = 0;
         const storageBase = options.storageDir || process.env.CREW_MEMORY_DIR || baseDir;
-        this.storePath = join22(storageBase, ".crew", "agentkeeper.jsonl");
+        this.storePath = join23(storageBase, ".crew", "agentkeeper.jsonl");
         this.maxEntries = options.maxEntries ?? 500;
         this.maxBytes = options.maxBytes ?? 2e6;
         this.maxAgeDays = options.maxAgeDays ?? 30;
@@ -16724,7 +16950,7 @@ ${String(entry.result || "").slice(0, 1200)}`;
       async loadAll() {
         let raw;
         try {
-          raw = await readFile18(this.storePath, "utf8");
+          raw = await readFile19(this.storePath, "utf8");
         } catch {
           return [];
         }
@@ -17070,7 +17296,7 @@ __export(dashboard_exports, {
   renderStatusDashboard: () => renderStatusDashboard
 });
 import chalk2 from "chalk";
-import { homedir as homedir10 } from "os";
+import { homedir as homedir11 } from "os";
 async function getSystemStatus() {
   const status = {
     online: false,
@@ -17085,7 +17311,7 @@ async function getSystemStatus() {
   const providers = [];
   try {
     const { readFileSync: readFileSync8 } = await import("node:fs");
-    const cfgPath = `${homedir10()}/.crewswarm/crewswarm.json`;
+    const cfgPath = `${homedir11()}/.crewswarm/crewswarm.json`;
     const cfg = JSON.parse(readFileSync8(cfgPath, "utf8"));
     const providerEntries = cfg.providers || {};
     for (const [id, p] of Object.entries(providerEntries)) {
@@ -17118,8 +17344,8 @@ async function getSystemStatus() {
     let authToken = "";
     try {
       const { readFileSync: readFileSync8 } = await import("node:fs");
-      const { homedir: homedir14 } = await import("node:os");
-      const cfg = JSON.parse(readFileSync8(`${homedir14()}/.crewswarm/config.json`, "utf8"));
+      const { homedir: homedir15 } = await import("node:os");
+      const cfg = JSON.parse(readFileSync8(`${homedir15()}/.crewswarm/config.json`, "utf8"));
       authToken = cfg?.rt?.authToken || "";
     } catch {
     }
@@ -17235,6 +17461,290 @@ var init_model_info = __esm({
       { name: "llama-3.3-70b", provider: "Groq", codingScore: 28, inputCost: 0.075, outputCost: 0.3, contextWindow: "128K", tier: "fast", note: "free tier" },
       { name: "gemini-2.5-flash-lite", provider: "Google", codingScore: 25, inputCost: 0.1, outputCost: 0.4, contextWindow: "1M", tier: "fast", note: "cheapest" }
     ];
+  }
+});
+
+// src/engine/chat-recall.ts
+var chat_recall_exports = {};
+__export(chat_recall_exports, {
+  buildRecallContext: () => buildRecallContext,
+  recallSearch: () => recallSearch
+});
+import { readFile as readFile34, readdir as readdir10 } from "node:fs/promises";
+import { existsSync as existsSync19 } from "node:fs";
+import { join as join41 } from "node:path";
+function tokenize4(text) {
+  return text.toLowerCase().replace(/[^a-z0-9\s_.-]/g, " ").split(/\s+/).filter((t) => t.length >= 2);
+}
+function scoreMatch(queryTokens, entryTokens) {
+  if (queryTokens.length === 0 || entryTokens.length === 0) return 0;
+  const entrySet = new Set(entryTokens);
+  let matches = 0;
+  for (const qt of queryTokens) {
+    if (entrySet.has(qt)) {
+      matches += 2;
+      continue;
+    }
+    for (const et of entrySet) {
+      if (et.startsWith(qt) || qt.startsWith(et)) {
+        matches += 1;
+        break;
+      }
+    }
+  }
+  return matches / (queryTokens.length * 2);
+}
+async function loadSessionHistories(projectDir) {
+  const sessions = [];
+  const sessionPath = join41(projectDir, ".crew", "session.json");
+  if (existsSync19(sessionPath)) {
+    try {
+      const raw = await readFile34(sessionPath, "utf8");
+      const session = JSON.parse(raw);
+      if (session.history?.length) {
+        sessions.push({
+          sessionId: session.sessionId || "current",
+          entries: session.history.map((h) => ({
+            timestamp: String(h.timestamp || ""),
+            input: String(h.input || ""),
+            output: h.output ? String(h.output) : void 0,
+            route: h.route ? String(h.route) : void 0,
+            agent: h.agent ? String(h.agent) : void 0,
+            tokens: tokenize4(`${h.input || ""} ${h.output || ""} ${h.route || ""} ${h.agent || ""}`)
+          }))
+        });
+      }
+    } catch {
+    }
+  }
+  const sessionsDir = join41(projectDir, ".crew", "sessions");
+  if (existsSync19(sessionsDir)) {
+    try {
+      const files = await readdir10(sessionsDir);
+      for (const file of files.filter((f) => f.endsWith(".json"))) {
+        try {
+          const raw = await readFile34(join41(sessionsDir, file), "utf8");
+          const session = JSON.parse(raw);
+          if (session.history?.length) {
+            sessions.push({
+              sessionId: session.sessionId || file.replace(".json", ""),
+              entries: session.history.map((h) => ({
+                timestamp: String(h.timestamp || ""),
+                input: String(h.input || ""),
+                output: h.output ? String(h.output) : void 0,
+                route: h.route ? String(h.route) : void 0,
+                agent: h.agent ? String(h.agent) : void 0,
+                tokens: tokenize4(`${h.input || ""} ${h.output || ""} ${h.route || ""} ${h.agent || ""}`)
+              }))
+            });
+          }
+        } catch {
+        }
+      }
+    } catch {
+    }
+  }
+  const routingPath = join41(projectDir, ".crew", "routing.log");
+  if (existsSync19(routingPath)) {
+    try {
+      const raw = await readFile34(routingPath, "utf8");
+      const entries = raw.split("\n").filter(Boolean).map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+      if (entries.length > 0) {
+        sessions.push({
+          sessionId: "routing-log",
+          entries: entries.map((e) => ({
+            timestamp: String(e.timestamp || ""),
+            input: String(e.task || e.input || ""),
+            output: String(e.decision || e.route || ""),
+            route: String(e.route || e.decision || ""),
+            agent: String(e.agent || ""),
+            tokens: tokenize4(JSON.stringify(e).slice(0, 500))
+          }))
+        });
+      }
+    } catch {
+    }
+  }
+  return sessions;
+}
+async function recallSearch(query, projectDir = process.cwd(), options = {}) {
+  const maxResults = options.maxResults ?? 10;
+  const minScore = options.minScore ?? 0.2;
+  const queryTokens = tokenize4(query);
+  if (queryTokens.length === 0) {
+    return { query, entries: [], totalSearched: 0 };
+  }
+  const sessions = await loadSessionHistories(projectDir);
+  const scored = [];
+  let totalSearched = 0;
+  for (const session of sessions) {
+    for (const entry of session.entries) {
+      totalSearched++;
+      const score = scoreMatch(queryTokens, entry.tokens);
+      if (score >= minScore) {
+        scored.push({
+          sessionId: session.sessionId,
+          timestamp: entry.timestamp,
+          input: entry.input,
+          output: entry.output,
+          route: entry.route,
+          agent: entry.agent,
+          score
+        });
+      }
+    }
+  }
+  scored.sort((a, b) => b.score - a.score || b.timestamp.localeCompare(a.timestamp));
+  return {
+    query,
+    entries: scored.slice(0, maxResults),
+    totalSearched
+  };
+}
+function buildRecallContext(result2, maxChars = 2e3) {
+  if (result2.entries.length === 0) return "";
+  const lines = ["## Relevant past interactions:"];
+  let chars = lines[0].length;
+  for (const entry of result2.entries) {
+    const line = `- [${entry.timestamp?.split("T")[0] || "?"}] ${entry.input?.slice(0, 120)}${entry.output ? " \u2192 " + entry.output.slice(0, 80) : ""}`;
+    if (chars + line.length > maxChars) break;
+    lines.push(line);
+    chars += line.length;
+  }
+  return lines.join("\n");
+}
+var init_chat_recall = __esm({
+  "src/engine/chat-recall.ts"() {
+    "use strict";
+  }
+});
+
+// src/engine/summon.ts
+var summon_exports = {};
+__export(summon_exports, {
+  buildSummonPrompt: () => buildSummonPrompt,
+  filterToolsForPersona: () => filterToolsForPersona,
+  getPersona: () => getPersona,
+  listPersonas: () => listPersonas
+});
+function getPersona(id) {
+  return PERSONAS[id];
+}
+function listPersonas() {
+  return Object.values(PERSONAS);
+}
+function buildSummonPrompt(basePrompt, persona, parentContext) {
+  const parts = [basePrompt, persona.systemPromptAddition];
+  if (parentContext) {
+    parts.push(`
+## Parent context:
+${parentContext}`);
+  }
+  return parts.join("\n\n");
+}
+function filterToolsForPersona(tools, persona) {
+  const domainKeywords = {
+    coding: "write code files",
+    testing: "run tests verify",
+    research: "search web fetch",
+    git: "git commit branch",
+    docs: "documentation readme",
+    planning: "plan roadmap architect"
+  };
+  const fakeTask = persona.toolDomains.map((d) => domainKeywords[d] || d).join(" ");
+  return filterToolsForTask(tools, fakeTask);
+}
+var PERSONAS;
+var init_summon = __esm({
+  "src/engine/summon.ts"() {
+    "use strict";
+    init_tool_filter();
+    PERSONAS = {
+      "crew-qa": {
+        id: "crew-qa",
+        name: "QA Specialist",
+        systemPromptAddition: `You are a QA specialist. Your primary focus is:
+- Writing comprehensive test cases
+- Verifying code correctness
+- Running test suites and analyzing failures
+- Checking edge cases and error handling
+- Ensuring test coverage for all modified code
+Always run tests after writing them to verify they pass.`,
+        defaultMaxTurns: 8,
+        toolDomains: ["coding", "testing"]
+      },
+      "crew-coder-back": {
+        id: "crew-coder-back",
+        name: "Backend Specialist",
+        systemPromptAddition: `You are a backend specialist. Your primary focus is:
+- API design and implementation (REST, GraphQL)
+- Database operations and data modeling
+- Authentication and authorization
+- Input validation and error handling
+- Performance and security best practices
+Prefer minimal, well-typed implementations. Validate at boundaries.`,
+        defaultMaxTurns: 10,
+        toolDomains: ["coding", "testing"]
+      },
+      "crew-coder-front": {
+        id: "crew-coder-front",
+        name: "Frontend Specialist",
+        systemPromptAddition: `You are a frontend specialist. Your primary focus is:
+- UI component implementation
+- Responsive layouts and CSS
+- Accessibility (WCAG AA compliance)
+- State management and data flow
+- Performance optimization (bundle size, render cycles)
+Follow the DESIGN.md design system if available. Use semantic HTML.`,
+        defaultMaxTurns: 10,
+        toolDomains: ["coding", "research"]
+      },
+      "crew-security": {
+        id: "crew-security",
+        name: "Security Reviewer",
+        systemPromptAddition: `You are a security specialist. Your primary focus is:
+- Identifying injection vulnerabilities (SQL, XSS, command)
+- Reviewing authentication and authorization logic
+- Checking for secrets/credentials in code
+- Input validation and sanitization
+- OWASP Top 10 compliance
+Report findings with severity (critical/high/medium/low) and fix guidance.`,
+        defaultMaxTurns: 6,
+        toolDomains: ["coding"]
+      },
+      "crew-copywriter": {
+        id: "crew-copywriter",
+        name: "Documentation Writer",
+        systemPromptAddition: `You are a technical writer. Your primary focus is:
+- Clear, concise documentation
+- API documentation with examples
+- README files with install/usage/contributing sections
+- Code comments only where logic isn't self-evident
+- Changelog entries
+Write for developers. Lead with examples, not explanations.`,
+        defaultMaxTurns: 6,
+        toolDomains: ["coding", "docs"]
+      },
+      "crew-fixer": {
+        id: "crew-fixer",
+        name: "Bug Fixer",
+        systemPromptAddition: `You are a debugging specialist. Your primary focus is:
+- Reading error messages and stack traces carefully
+- Identifying root causes, not just symptoms
+- Making minimal, targeted fixes
+- Verifying the fix doesn't introduce regressions
+- Running the failing test/command after fixing
+Never guess \u2014 read the code first. Fix one thing at a time.`,
+        defaultMaxTurns: 8,
+        toolDomains: ["coding", "testing"]
+      }
+    };
   }
 });
 
@@ -18300,10 +18810,10 @@ init_sandbox();
 init_orchestrator();
 
 // src/auth/token-finder.ts
-import { readFile as readFile16, access as access5 } from "node:fs/promises";
+import { readFile as readFile17, access as access5 } from "node:fs/promises";
 import { constants as constants5 } from "node:fs";
-import { join as join20 } from "node:path";
-import { homedir as homedir4, userInfo as userInfo2 } from "node:os";
+import { join as join21 } from "node:path";
+import { homedir as homedir5, userInfo as userInfo2 } from "node:os";
 import { execFile as execFile3 } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
 var execFileAsync3 = promisify3(execFile3);
@@ -18314,17 +18824,17 @@ var TokenFinder = class {
     if (claudeToken) {
       tokens.claude = claudeToken;
     }
-    const openaiPath = join20(homedir4(), ".openai", "config");
+    const openaiPath = join21(homedir5(), ".openai", "config");
     if (await this.exists(openaiPath)) {
       try {
-        const data = await readFile16(openaiPath, "utf8");
+        const data = await readFile17(openaiPath, "utf8");
         const match = data.match(/api_key[:=]\s*([a-zA-Z0-9\-]+)/);
         if (match) tokens.openai = match[1];
       } catch (e) {
         console.error(`Failed to parse OpenAI config: ${e.message}`);
       }
     }
-    const geminiPath = join20(homedir4(), ".config", "gcloud", "application_default_credentials.json");
+    const geminiPath = join21(homedir5(), ".config", "gcloud", "application_default_credentials.json");
     if (await this.exists(geminiPath)) {
       try {
         tokens.gemini = "(detected via ADC)";
@@ -18332,7 +18842,7 @@ var TokenFinder = class {
         console.error(`Failed to check Gemini ADC: ${e.message}`);
       }
     }
-    const cursorDbPath = join20(homedir4(), ".cursor", "User", "globalStorage", "state.vscdb");
+    const cursorDbPath = join21(homedir5(), ".cursor", "User", "globalStorage", "state.vscdb");
     if (await this.exists(cursorDbPath)) {
       try {
         const { stdout } = await execFileAsync3("sqlite3", [
@@ -18390,9 +18900,9 @@ init_logger();
 
 // src/cache/token-cache.ts
 import { createHash as createHash4 } from "node:crypto";
-import { mkdir as mkdir9, readFile as readFile17, writeFile as writeFile7 } from "node:fs/promises";
-import { existsSync as existsSync10 } from "node:fs";
-import { join as join21 } from "node:path";
+import { mkdir as mkdir9, readFile as readFile18, writeFile as writeFile7 } from "node:fs/promises";
+import { existsSync as existsSync11 } from "node:fs";
+import { join as join22 } from "node:path";
 function nowIso3() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -18403,21 +18913,21 @@ function toTimestamp(iso) {
 var TokenCache = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = baseDir;
-    this.cachePath = join21(baseDir, ".crew", "token-cache.json");
+    this.cachePath = join22(baseDir, ".crew", "token-cache.json");
   }
   static hashKey(input) {
     return createHash4("sha256").update(String(input || "")).digest("hex");
   }
   async ensureStore() {
-    const dir = join21(this.baseDir, ".crew");
+    const dir = join22(this.baseDir, ".crew");
     await mkdir9(dir, { recursive: true });
-    if (!existsSync10(this.cachePath)) {
+    if (!existsSync11(this.cachePath)) {
       const initial = { version: 1, namespaces: {} };
       await writeFile7(this.cachePath, JSON.stringify(initial, null, 2), "utf8");
       return initial;
     }
     try {
-      const raw = await readFile17(this.cachePath, "utf8");
+      const raw = await readFile18(this.cachePath, "utf8");
       const parsed = JSON.parse(raw);
       return {
         version: parsed.version || 1,
@@ -18610,35 +19120,35 @@ var Planner = class {
 };
 
 // src/cli/index.ts
-import { existsSync as existsSync23 } from "node:fs";
-import { homedir as homedir13 } from "node:os";
+import { existsSync as existsSync25 } from "node:fs";
+import { homedir as homedir14 } from "node:os";
 
 // src/diagnostics/doctor.ts
 import { access as access6 } from "node:fs/promises";
 import { constants as constants6 } from "node:fs";
-import { join as join24 } from "node:path";
+import { join as join25 } from "node:path";
 import { dirname as dirname6 } from "node:path";
-import { homedir as homedir6 } from "node:os";
+import { homedir as homedir7 } from "node:os";
 import { execFile as execFile4 } from "node:child_process";
 import { promisify as promisify4 } from "node:util";
 import { fileURLToPath } from "node:url";
 
 // src/mcp/index.ts
 import { execFileSync } from "node:child_process";
-import { mkdir as mkdir11, readFile as readFile19, writeFile as writeFile9 } from "node:fs/promises";
-import { existsSync as existsSync11 } from "node:fs";
-import { join as join23 } from "node:path";
-import { homedir as homedir5 } from "node:os";
+import { mkdir as mkdir11, readFile as readFile20, writeFile as writeFile9 } from "node:fs/promises";
+import { existsSync as existsSync12 } from "node:fs";
+import { join as join24 } from "node:path";
+import { homedir as homedir6 } from "node:os";
 function localStorePath(baseDir = process.cwd()) {
-  return join23(baseDir, ".crew", "mcp-servers.json");
+  return join24(baseDir, ".crew", "mcp-servers.json");
 }
 function clientPath(client) {
-  const home = homedir5();
+  const home = homedir6();
   const key = String(client || "").toLowerCase();
-  if (key === "cursor") return join23(home, ".cursor", "mcp.json");
-  if (key === "claude") return join23(home, ".claude", "mcp.json");
-  if (key === "opencode") return join23(home, ".config", "opencode", "mcp.json");
-  if (key === "codex") return join23(home, ".codex", "mcp", "config.json");
+  if (key === "cursor") return join24(home, ".cursor", "mcp.json");
+  if (key === "claude") return join24(home, ".claude", "mcp.json");
+  if (key === "opencode") return join24(home, ".config", "opencode", "mcp.json");
+  if (key === "codex") return join24(home, ".codex", "mcp", "config.json");
   throw new Error(`Unsupported client: ${client}`);
 }
 function isCodexClient(client) {
@@ -18667,9 +19177,9 @@ function removeServerFromCodex(name) {
   execFileSync("codex", ["mcp", "remove", name], { stdio: "ignore" });
 }
 async function loadStore(path3) {
-  if (!existsSync11(path3)) return { mcpServers: {} };
+  if (!existsSync12(path3)) return { mcpServers: {} };
   try {
-    const raw = await readFile19(path3, "utf8");
+    const raw = await readFile20(path3, "utf8");
     const parsed = JSON.parse(raw);
     return { mcpServers: parsed.mcpServers || {} };
   } catch {
@@ -18677,7 +19187,7 @@ async function loadStore(path3) {
   }
 }
 async function saveStore(path3, store) {
-  await mkdir11(join23(path3, ".."), { recursive: true });
+  await mkdir11(join24(path3, ".."), { recursive: true });
   await writeFile9(path3, `${JSON.stringify(store, null, 2)}
 `, "utf8");
 }
@@ -18807,7 +19317,7 @@ async function gatewayReachable(url) {
   }
 }
 async function configExists() {
-  const configPath3 = join24(homedir6(), ".crewswarm", "crewswarm.json");
+  const configPath3 = join25(homedir7(), ".crewswarm", "crewswarm.json");
   try {
     await access6(configPath3, constants6.F_OK);
     return { ok: true, path: configPath3 };
@@ -18837,16 +19347,16 @@ async function getInstalledCliVersion() {
   }
   const here = dirname6(fileURLToPath(import.meta.url));
   const candidates = [
-    join24(here, "..", "package.json"),
-    join24(here, "..", "..", "package.json"),
-    join24(process.cwd(), "package.json")
+    join25(here, "..", "package.json"),
+    join25(here, "..", "..", "package.json"),
+    join25(process.cwd(), "package.json")
   ];
   for (const candidate of candidates) {
     try {
       const raw = await (await import("node:fs/promises")).readFile(candidate, "utf8");
       const parsed = JSON.parse(raw);
       const pkgName = String(parsed?.name || "");
-      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join24("crew-cli", "package.json")}`);
+      const looksLikeCli = pkgName === "crewswarm-cli" || pkgName === "@crewswarm/crew-cli" || candidate.includes(`${join25("crew-cli", "package.json")}`);
       if (looksLikeCli && typeof parsed?.version === "string" && parsed.version.trim()) {
         return parsed.version.trim();
       }
@@ -19055,9 +19565,9 @@ import os from "node:os";
 import path2 from "node:path";
 
 // src/engines/session-layer.ts
-import { mkdir as mkdir12, readFile as readFile20, writeFile as writeFile10 } from "node:fs/promises";
-import { existsSync as existsSync12 } from "node:fs";
-import { join as join25, resolve as resolve12 } from "node:path";
+import { mkdir as mkdir12, readFile as readFile21, writeFile as writeFile10 } from "node:fs/promises";
+import { existsSync as existsSync13 } from "node:fs";
+import { join as join26, resolve as resolve12 } from "node:path";
 function nowIso4() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -19070,22 +19580,22 @@ function clip2(text, maxChars) {
 var EngineSessionLayer = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = resolve12(baseDir);
-    this.stateDir = join25(this.baseDir, ".crew");
-    this.sessionsPath = join25(this.stateDir, "engine-sessions.json");
+    this.stateDir = join26(this.baseDir, ".crew");
+    this.sessionsPath = join26(this.stateDir, "engine-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
   }
   async ensureInitialized() {
     await mkdir12(this.stateDir, { recursive: true });
-    if (!existsSync12(this.sessionsPath)) {
+    if (!existsSync13(this.sessionsPath)) {
       await writeFile10(this.sessionsPath, JSON.stringify({}, null, 2), "utf8");
     }
   }
   async loadStore() {
     await this.ensureInitialized();
     try {
-      const raw = await readFile20(this.sessionsPath, "utf8");
+      const raw = await readFile21(this.sessionsPath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -19197,9 +19707,9 @@ function buildSessionPromptEnvelope(params) {
 }
 
 // src/session/conversation-transcript.ts
-import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile21, readdir as readdir6 } from "node:fs/promises";
-import { existsSync as existsSync13 } from "node:fs";
-import { join as join26, resolve as resolve13 } from "node:path";
+import { appendFile as appendFile4, mkdir as mkdir13, readFile as readFile22, readdir as readdir6 } from "node:fs/promises";
+import { existsSync as existsSync14 } from "node:fs";
+import { join as join27, resolve as resolve13 } from "node:path";
 function estimateTokens3(text) {
   if (!text) return 0;
   return Math.ceil(text.length / 3.7);
@@ -19216,11 +19726,11 @@ function clip3(text, maxChars) {
 var ConversationTranscriptStore = class {
   constructor(baseDir = process.cwd()) {
     const root = resolve13(baseDir);
-    this.stateDir = join26(root, ".crew");
+    this.stateDir = join27(root, ".crew");
   }
   transcriptPath(sessionId) {
     const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return join26(this.stateDir, `transcript-${safe}.jsonl`);
+    return join27(this.stateDir, `transcript-${safe}.jsonl`);
   }
   async ensureInitialized() {
     await mkdir13(this.stateDir, { recursive: true });
@@ -19252,9 +19762,9 @@ var ConversationTranscriptStore = class {
     const key = String(sessionId || "").trim();
     if (!key) return [];
     const path3 = this.transcriptPath(key);
-    if (!existsSync13(path3)) return [];
+    if (!existsSync14(path3)) return [];
     try {
-      const raw = await readFile21(path3, "utf8");
+      const raw = await readFile22(path3, "utf8");
       const turns = [];
       for (const line of raw.split("\n")) {
         const trimmed = line.trim();
@@ -19299,9 +19809,9 @@ var ConversationTranscriptStore = class {
         const match = f.match(/^transcript-(.+)\.jsonl$/);
         if (!match) continue;
         const sessionId = match[1];
-        const fullPath = join26(this.stateDir, f);
+        const fullPath = join27(this.stateDir, f);
         try {
-          const raw = await readFile21(fullPath, "utf8");
+          const raw = await readFile22(fullPath, "utf8");
           const lines = raw.split("\n").filter((l) => l.trim()).length;
           sessions.push({ sessionId, path: fullPath, lines });
         } catch {
@@ -19345,10 +19855,10 @@ function buildConversationHydrationPrompt(params) {
 }
 
 // src/engines/native-session.ts
-import { mkdir as mkdir14, readFile as readFile22, writeFile as writeFile11 } from "node:fs/promises";
-import { existsSync as existsSync14 } from "node:fs";
-import { homedir as homedir7 } from "node:os";
-import { join as join27, resolve as resolve14 } from "node:path";
+import { mkdir as mkdir14, readFile as readFile23, writeFile as writeFile11 } from "node:fs/promises";
+import { existsSync as existsSync15 } from "node:fs";
+import { homedir as homedir8 } from "node:os";
+import { join as join28, resolve as resolve14 } from "node:path";
 import { randomUUID as randomUUID9 } from "node:crypto";
 function nowIso6() {
   return (/* @__PURE__ */ new Date()).toISOString();
@@ -19364,22 +19874,22 @@ var NativeEngineSessionManager = class {
     this.ptySpawn = null;
     this.ptyLoadFailed = false;
     this.baseDir = resolve14(baseDir);
-    this.stateDir = join27(this.baseDir, ".crew");
-    this.statePath = join27(this.stateDir, "engine-native-sessions.json");
+    this.stateDir = join28(this.baseDir, ".crew");
+    this.statePath = join28(this.stateDir, "engine-native-sessions.json");
   }
   makeKey(engine, sessionId) {
     return `${String(engine || "").trim().toLowerCase()}::${String(sessionId || "").trim()}`;
   }
   async ensureStore() {
     await mkdir14(this.stateDir, { recursive: true });
-    if (!existsSync14(this.statePath)) {
+    if (!existsSync15(this.statePath)) {
       await writeFile11(this.statePath, JSON.stringify({}, null, 2), "utf8");
     }
   }
   async loadStore() {
     await this.ensureStore();
     try {
-      const raw = await readFile22(this.statePath, "utf8");
+      const raw = await readFile23(this.statePath, "utf8");
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
       return parsed;
@@ -19583,8 +20093,8 @@ Timed out after ${timeoutMs}ms`,
 function resolveCursorAgentBinQuoted() {
   const fromEnv = String(process.env.CURSOR_CLI_BIN || "").trim();
   if (fromEnv) return shellQuote(fromEnv);
-  const agentLocal = join27(homedir7(), ".local", "bin", "agent");
-  if (existsSync14(agentLocal)) return shellQuote(agentLocal);
+  const agentLocal = join28(homedir8(), ".local", "bin", "agent");
+  if (existsSync15(agentLocal)) return shellQuote(agentLocal);
   return "agent";
 }
 function buildEngineShellCommand(engine, prompt, model, cwd) {
@@ -19610,9 +20120,9 @@ function buildEngineShellCommand(engine, prompt, model, cwd) {
 }
 
 // src/engines/tool-audit.ts
-import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile23, writeFile as writeFile12 } from "node:fs/promises";
-import { existsSync as existsSync15 } from "node:fs";
-import { join as join28, resolve as resolve15 } from "node:path";
+import { appendFile as appendFile5, mkdir as mkdir15, readFile as readFile24, writeFile as writeFile12 } from "node:fs/promises";
+import { existsSync as existsSync16 } from "node:fs";
+import { join as join29, resolve as resolve15 } from "node:path";
 function clip4(text, max = 3e3) {
   const value = String(text || "");
   if (value.length <= max) return value;
@@ -19686,15 +20196,15 @@ function extractToolCalls(raw) {
 var ToolAuditStore = class {
   constructor(baseDir = process.cwd()) {
     this.baseDir = resolve15(baseDir);
-    this.dir = join28(this.baseDir, ".crew", "tool-audit");
-    this.indexPath = join28(this.baseDir, ".crew", "tool-audit.jsonl");
+    this.dir = join29(this.baseDir, ".crew", "tool-audit");
+    this.indexPath = join29(this.baseDir, ".crew", "tool-audit.jsonl");
   }
   async ensureDir() {
     await mkdir15(this.dir, { recursive: true });
   }
   async record(run) {
     await this.ensureDir();
-    const runPath = join28(this.dir, `${run.runId}.json`);
+    const runPath = join29(this.dir, `${run.runId}.json`);
     await writeFile12(runPath, JSON.stringify(run, null, 2), "utf8");
     await appendFile5(this.indexPath, `${JSON.stringify({
       runId: run.runId,
@@ -19709,15 +20219,15 @@ var ToolAuditStore = class {
   }
   async loadRun(runId) {
     try {
-      const raw = await readFile23(join28(this.dir, `${runId}.json`), "utf8");
+      const raw = await readFile24(join29(this.dir, `${runId}.json`), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
     }
   }
   async list(limit = 30) {
-    if (!existsSync15(this.indexPath)) return [];
-    const raw = await readFile23(this.indexPath, "utf8");
+    if (!existsSync16(this.indexPath)) return [];
+    const raw = await readFile24(this.indexPath, "utf8");
     const rows = raw.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
       try {
         return JSON.parse(line);
@@ -20257,13 +20767,13 @@ async function getToolAuditReplayPlan(baseDir, runId) {
 
 // src/watch/index.ts
 import { watch } from "node:fs";
-import { readFile as readFile25 } from "node:fs/promises";
-import { join as join29 } from "node:path";
+import { readFile as readFile26 } from "node:fs/promises";
+import { join as join30 } from "node:path";
 
 // src/studio/broadcaster.ts
 init_logger();
 import WebSocket from "ws";
-import { readFile as readFile24 } from "node:fs/promises";
+import { readFile as readFile25 } from "node:fs/promises";
 var StudioBroadcaster = class {
   constructor(studioUrl = "ws://127.0.0.1:3334/ws", logger3) {
     this.ws = null;
@@ -20318,7 +20828,7 @@ var StudioBroadcaster = class {
       };
       if (includeContent) {
         try {
-          event.content = await readFile24(filePath, "utf8");
+          event.content = await readFile25(filePath, "utf8");
         } catch {
           event.content = void 0;
         }
@@ -20385,7 +20895,7 @@ function extractTodos(content) {
 async function inspectFileForTodos(path3) {
   let content = "";
   try {
-    content = await readFile25(path3, "utf8");
+    content = await readFile26(path3, "utf8");
   } catch {
     return { type: "file_changed", file: path3 };
   }
@@ -20436,7 +20946,7 @@ function startWatchMode(rootDir, onEvent, ignored = ["node_modules", ".git", "di
     if (!filename) return;
     const relative7 = String(filename);
     if (ignored.some((p) => relative7.includes(p))) return;
-    const fullPath = join29(rootDir, relative7);
+    const fullPath = join30(rootDir, relative7);
     const event = await inspectFileForTodos(fullPath);
     await onEvent(event);
     if (broadcaster) {
@@ -20477,7 +20987,7 @@ function getBanner() {
 // src/multirepo/index.ts
 import { readdir as readdir7, access as access7, mkdir as mkdir16, writeFile as writeFile13 } from "node:fs/promises";
 import { constants as constants7 } from "node:fs";
-import { dirname as dirname7, join as join30, resolve as resolve16 } from "node:path";
+import { dirname as dirname7, join as join31, resolve as resolve16 } from "node:path";
 import { execFile as execFile5 } from "node:child_process";
 import { promisify as promisify5 } from "node:util";
 var execFileAsync5 = promisify5(execFile5);
@@ -20505,8 +21015,8 @@ async function findSiblingRepos(baseDir = process.cwd()) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === currentName) continue;
-    const repoPath = join30(parent, entry.name);
-    if (await exists(join30(repoPath, ".git"))) {
+    const repoPath = join31(parent, entry.name);
+    if (await exists(join31(repoPath, ".git"))) {
       repos.push(repoPath);
     }
   }
@@ -20544,9 +21054,9 @@ async function collectMultiRepoContext(baseDir = process.cwd()) {
 async function syncRepoSnapshots(baseDir = process.cwd()) {
   const siblings = await findSiblingRepos(baseDir);
   const summaries = await Promise.all(siblings.map((path3) => getRepoSummary(path3)));
-  const outDir = join30(baseDir, ".crew");
+  const outDir = join31(baseDir, ".crew");
   await mkdir16(outDir, { recursive: true });
-  const outPath = join30(outDir, "multi-repo-sync.json");
+  const outPath = join31(outDir, "multi-repo-sync.json");
   await writeFile13(
     outPath,
     JSON.stringify({ syncedAt: (/* @__PURE__ */ new Date()).toISOString(), repos: summaries }, null, 2),
@@ -20580,10 +21090,10 @@ init_ci();
 
 // src/browser/index.ts
 import { spawn as spawn3 } from "node:child_process";
-import { access as access8, readFile as readFile26, writeFile as writeFile14 } from "node:fs/promises";
+import { access as access8, readFile as readFile27, writeFile as writeFile14 } from "node:fs/promises";
 import { constants as constants8 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { join as join31 } from "node:path";
+import { join as join32 } from "node:path";
 import { execFile as execFile6 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
 import WebSocket2 from "ws";
@@ -20625,7 +21135,7 @@ async function launchChromeDebug(url, port = 9222) {
   if (!chrome) {
     throw new Error("Chrome/Chromium binary not found. Set CHROME_BIN or install Chrome.");
   }
-  const userDataDir = join31(tmpdir2(), `crew-browser-debug-${Date.now()}`);
+  const userDataDir = join32(tmpdir2(), `crew-browser-debug-${Date.now()}`);
   const args = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
@@ -20728,7 +21238,7 @@ async function runBrowserDebug(url, options = {}) {
     let screenshotPath = options.screenshotPath;
     const screenshotRes = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true });
     if (!screenshotPath) {
-      screenshotPath = join31(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
+      screenshotPath = join32(process.cwd(), ".crew", `browser-shot-${Date.now()}.png`);
     }
     await writeFile14(screenshotPath, Buffer.from(screenshotRes.result?.data || screenshotRes.data || "", "base64"));
     return { consoleErrors: errors, screenshotPath };
@@ -20760,15 +21270,15 @@ function compareScreenshotBuffers(a, b) {
   };
 }
 async function compareScreenshots(pathA, pathB) {
-  const [a, b] = await Promise.all([readFile26(pathA), readFile26(pathB)]);
+  const [a, b] = await Promise.all([readFile27(pathA), readFile27(pathB)]);
   return compareScreenshotBuffers(a, b);
 }
 
 // src/team/index.ts
-import { access as access9, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile27, readdir as readdir8, writeFile as writeFile15 } from "node:fs/promises";
+import { access as access9, copyFile as copyFile2, mkdir as mkdir17, readFile as readFile28, readdir as readdir8, writeFile as writeFile15 } from "node:fs/promises";
 import { constants as constants9 } from "node:fs";
 import { hostname } from "node:os";
-import { join as join32 } from "node:path";
+import { join as join33 } from "node:path";
 var DEFAULT_PRIVACY = {
   sharePrompt: true,
   shareOriginal: true,
@@ -20784,13 +21294,13 @@ async function exists3(path3) {
   }
 }
 function getStateDir(baseDir = process.cwd()) {
-  return join32(baseDir, ".crew");
+  return join33(baseDir, ".crew");
 }
 function getTeamSyncDir(baseDir = process.cwd()) {
-  return process.env.TEAM_SYNC_DIR || join32(getStateDir(baseDir), "team-sync");
+  return process.env.TEAM_SYNC_DIR || join33(getStateDir(baseDir), "team-sync");
 }
 function getPrivacyPath(baseDir = process.cwd()) {
-  return join32(getStateDir(baseDir), "privacy.json");
+  return join33(getStateDir(baseDir), "privacy.json");
 }
 function applyPrivacyToCorrection(entry, privacy) {
   const output = {
@@ -20811,7 +21321,7 @@ async function loadPrivacyControls(baseDir = process.cwd()) {
     return { ...DEFAULT_PRIVACY };
   }
   try {
-    const raw = await readFile27(path3, "utf8");
+    const raw = await readFile28(path3, "utf8");
     const parsed = JSON.parse(raw);
     return {
       sharePrompt: parsed.sharePrompt !== false,
@@ -20831,20 +21341,20 @@ async function uploadTeamContext(baseDir = process.cwd()) {
   const stateDir = getStateDir(baseDir);
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir17(teamDir, { recursive: true });
-  const sessionPath = join32(stateDir, "session.json");
-  const correctionsPath = join32(stateDir, "training-data.jsonl");
+  const sessionPath = join33(stateDir, "session.json");
+  const correctionsPath = join33(stateDir, "training-data.jsonl");
   const host = hostname().replace(/[^a-zA-Z0-9_-]/g, "_");
-  const sessionOut = join32(teamDir, `${host}-session.json`);
-  const correctionsOut = join32(teamDir, `${host}-training-data.jsonl`);
+  const sessionOut = join33(teamDir, `${host}-session.json`);
+  const correctionsOut = join33(teamDir, `${host}-training-data.jsonl`);
   if (await exists3(sessionPath)) {
     if (process.env.TEAM_S3_SESSION_PUT_URL) {
-      const body = await readFile27(sessionPath, "utf8");
+      const body = await readFile28(sessionPath, "utf8");
       await fetch(process.env.TEAM_S3_SESSION_PUT_URL, { method: "PUT", body });
     }
     await copyFile2(sessionPath, sessionOut);
   }
   if (await exists3(correctionsPath)) {
-    let correctionsRaw = await readFile27(correctionsPath, "utf8");
+    let correctionsRaw = await readFile28(correctionsPath, "utf8");
     const privacy = await loadPrivacyControls(baseDir);
     if (correctionsRaw.trim().length > 0) {
       const lines = correctionsRaw.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -20864,8 +21374,8 @@ async function downloadTeamContext(baseDir = process.cwd()) {
   const teamDir = getTeamSyncDir(baseDir);
   await mkdir17(stateDir, { recursive: true });
   await mkdir17(teamDir, { recursive: true });
-  const localSessionPath = join32(stateDir, "session.json");
-  const localCorrectionsPath = join32(stateDir, "training-data.jsonl");
+  const localSessionPath = join33(stateDir, "session.json");
+  const localCorrectionsPath = join33(stateDir, "training-data.jsonl");
   if (process.env.TEAM_S3_SESSION_GET_URL) {
     const response = await fetch(process.env.TEAM_S3_SESSION_GET_URL);
     if (response.ok) {
@@ -20884,13 +21394,13 @@ async function downloadTeamContext(baseDir = process.cwd()) {
   const sessionCandidates = files.filter((name) => name.endsWith("-session.json"));
   const correctionCandidates = files.filter((name) => name.endsWith("-training-data.jsonl"));
   if (sessionCandidates.length > 0 && !await exists3(localSessionPath)) {
-    const src = join32(teamDir, sessionCandidates.sort().at(-1));
+    const src = join33(teamDir, sessionCandidates.sort().at(-1));
     await copyFile2(src, localSessionPath);
   }
   let mergedCorrections = "";
   const seen = /* @__PURE__ */ new Set();
   if (await exists3(localCorrectionsPath)) {
-    const local = await readFile27(localCorrectionsPath, "utf8");
+    const local = await readFile28(localCorrectionsPath, "utf8");
     for (const line of local.split("\n").map((s) => s.trim()).filter(Boolean)) {
       seen.add(line);
       mergedCorrections += `${line}
@@ -20898,7 +21408,7 @@ async function downloadTeamContext(baseDir = process.cwd()) {
     }
   }
   for (const file of correctionCandidates) {
-    const raw = await readFile27(join32(teamDir, file), "utf8");
+    const raw = await readFile28(join33(teamDir, file), "utf8");
     for (const line of raw.split("\n").map((s) => s.trim()).filter(Boolean)) {
       if (!seen.has(line)) {
         seen.add(line);
@@ -20931,8 +21441,8 @@ async function getTeamSyncStatus(baseDir = process.cwd()) {
 // src/voice/listener.ts
 import { execFile as execFile7 } from "node:child_process";
 import { promisify as promisify8 } from "node:util";
-import { readFile as readFile28, writeFile as writeFile16 } from "node:fs/promises";
-import { join as join33 } from "node:path";
+import { readFile as readFile29, writeFile as writeFile16 } from "node:fs/promises";
+import { join as join34 } from "node:path";
 import { tmpdir as tmpdir3 } from "node:os";
 var execFileAsync7 = promisify8(execFile7);
 async function commandExists2(command) {
@@ -20972,7 +21482,7 @@ function selectRecorderPlan(platform2, hasSox, hasFfmpeg, outputPath, durationSe
 }
 async function recordAudio(options = {}) {
   const durationSec = Math.max(1, options.durationSec || 6);
-  const outputPath = options.outputPath || join33(tmpdir3(), `crew-listen-${Date.now()}.wav`);
+  const outputPath = options.outputPath || join34(tmpdir3(), `crew-listen-${Date.now()}.wav`);
   const hasSox = await commandExists2("sox");
   const hasFfmpeg = await commandExists2("ffmpeg");
   const plan = selectRecorderPlan(process.platform, hasSox, hasFfmpeg, outputPath, durationSec);
@@ -20987,7 +21497,7 @@ async function transcribeWithOpenAi(audioPath) {
   if (!key) {
     throw new Error("OPENAI_API_KEY is required for OpenAI Whisper transcription.");
   }
-  const audioBuffer = await readFile28(audioPath);
+  const audioBuffer = await readFile29(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-1");
@@ -21009,7 +21519,7 @@ async function transcribeWithGroq(audioPath) {
   if (!key) {
     throw new Error("GROQ_API_KEY is required for Groq Whisper transcription.");
   }
-  const audioBuffer = await readFile28(audioPath);
+  const audioBuffer = await readFile29(audioPath);
   const blob = new Blob([audioBuffer], { type: "audio/wav" });
   const form = new FormData();
   form.append("model", "whisper-large-v3-turbo");
@@ -21034,15 +21544,15 @@ async function transcribeWithWhisperCli(audioPath) {
     throw new Error("Local whisper CLI is not installed. Install with: pip install faster-whisper");
   }
   const whisperCmd = hasFasterWhisper ? "faster-whisper" : "whisper";
-  const outDir = join33(tmpdir3(), `crew-whisper-${Date.now()}`);
+  const outDir = join34(tmpdir3(), `crew-whisper-${Date.now()}`);
   await execFileAsync7("mkdir", ["-p", outDir]);
   const model = hasFasterWhisper ? "tiny" : "base";
   await execFileAsync7(whisperCmd, [audioPath, "--model", model, "--output_format", "txt", "--output_dir", outDir], {
     maxBuffer: 1024 * 1024 * 16
   });
   const baseName = audioPath.split("/").pop()?.replace(/\.[^.]+$/, "") || "audio";
-  const txtPath = join33(outDir, `${baseName}.txt`);
-  const text = await readFile28(txtPath, "utf8");
+  const txtPath = join34(outDir, `${baseName}.txt`);
+  const text = await readFile29(txtPath, "utf8");
   return text.trim();
 }
 async function transcribeAudio(audioPath, options = {}) {
@@ -21074,8 +21584,8 @@ async function speakWithSkill(router, text, skill = "elevenlabs.tts") {
   return router.callSkill(skill, { text });
 }
 async function appendVoiceTranscript(baseDir, role, text) {
-  const path3 = join33(baseDir, ".crew", "voice-transcript.log");
-  await execFileAsync7("mkdir", ["-p", join33(baseDir, ".crew")]);
+  const path3 = join34(baseDir, ".crew", "voice-transcript.log");
+  await execFileAsync7("mkdir", ["-p", join34(baseDir, ".crew")]);
   const line = JSON.stringify({
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     role,
@@ -21086,7 +21596,7 @@ async function appendVoiceTranscript(baseDir, role, text) {
 }
 
 // src/context/augment.ts
-import { readFile as readFile29 } from "node:fs/promises";
+import { readFile as readFile30 } from "node:fs/promises";
 import { extname as extname4, resolve as resolve17 } from "node:path";
 function collectOption(value, previous = []) {
   if (!value) return previous;
@@ -21119,7 +21629,7 @@ async function buildFileContextBlock(paths = [], maxChars = 8e3) {
   for (const rawPath of paths) {
     const abs = resolve17(rawPath);
     try {
-      const content = await readFile29(abs, "utf8");
+      const content = await readFile30(abs, "utf8");
       sections.push([
         `### File Context: ${abs}`,
         "```text",
@@ -21159,7 +21669,7 @@ async function buildImageContextBlock(paths = [], maxBytes = 25e4) {
 (unsupported image type; supported: png, jpg, jpeg, webp, gif)`);
         continue;
       }
-      const buf = await readFile29(abs);
+      const buf = await readFile30(abs);
       const used = buf.subarray(0, maxBytes);
       const truncated = buf.length > maxBytes;
       const dataUri = `data:${mime};base64,${used.toString("base64")}`;
@@ -21295,9 +21805,9 @@ function detectHighSeverityFindings(text) {
 }
 
 // src/headless/index.ts
-import { mkdir as mkdir18, readFile as readFile30, writeFile as writeFile17 } from "node:fs/promises";
-import { existsSync as existsSync16 } from "node:fs";
-import { join as join34 } from "node:path";
+import { mkdir as mkdir18, readFile as readFile31, writeFile as writeFile17 } from "node:fs/promises";
+import { existsSync as existsSync17 } from "node:fs";
+import { join as join35 } from "node:path";
 
 // src/runtime/execution-policy.ts
 init_capabilities();
@@ -21372,19 +21882,19 @@ function isRiskBlocked(risk, threshold, force = false) {
 // src/headless/index.ts
 init_blast_radius();
 function statePath(baseDir) {
-  return join34(baseDir, ".crew", "headless-state.json");
+  return join35(baseDir, ".crew", "headless-state.json");
 }
 async function ensureState(baseDir) {
   const path3 = statePath(baseDir);
-  await mkdir18(join34(baseDir, ".crew"), { recursive: true });
-  if (!existsSync16(path3)) {
+  await mkdir18(join35(baseDir, ".crew"), { recursive: true });
+  if (!existsSync17(path3)) {
     await writeFile17(path3, JSON.stringify({ paused: false, updatedAt: (/* @__PURE__ */ new Date()).toISOString() }, null, 2), "utf8");
   }
 }
 async function getHeadlessState(baseDir = process.cwd()) {
   await ensureState(baseDir);
   try {
-    const raw = await readFile30(statePath(baseDir), "utf8");
+    const raw = await readFile31(statePath(baseDir), "utf8");
     const parsed = JSON.parse(raw);
     return { paused: Boolean(parsed.paused), updatedAt: parsed.updatedAt };
   } catch {
@@ -21401,9 +21911,9 @@ async function setHeadlessPaused(paused, baseDir = process.cwd()) {
 }
 async function appendOutLine(baseDir, outPath, payload) {
   if (!outPath) return;
-  const fullPath = join34(baseDir, outPath);
-  await mkdir18(join34(fullPath, ".."), { recursive: true });
-  const prev = existsSync16(fullPath) ? await readFile30(fullPath, "utf8") : "";
+  const fullPath = join35(baseDir, outPath);
+  await mkdir18(join35(fullPath, ".."), { recursive: true });
+  const prev = existsSync17(fullPath) ? await readFile31(fullPath, "utf8") : "";
   await writeFile17(fullPath, `${prev}${JSON.stringify(payload)}
 `, "utf8");
 }
@@ -21488,8 +21998,8 @@ async function runHeadlessTask(options) {
 // src/interface/server.ts
 init_collections();
 import { createServer } from "node:http";
-import { homedir as homedir9 } from "node:os";
-import { join as join36 } from "node:path";
+import { homedir as homedir10 } from "node:os";
+import { join as join37 } from "node:path";
 import { readFileSync as readFileSync5 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
 
@@ -21792,12 +22302,12 @@ ${context}` : message;
 }
 
 // src/metrics/pipeline.ts
-import { readFile as readFile31 } from "node:fs/promises";
-import { join as join35 } from "node:path";
+import { readFile as readFile32 } from "node:fs/promises";
+import { join as join36 } from "node:path";
 async function loadPipelineMetricsSummary(baseDir) {
-  const path3 = join35(baseDir, ".crew", "pipeline-metrics.jsonl");
+  const path3 = join36(baseDir, ".crew", "pipeline-metrics.jsonl");
   try {
-    const raw = await readFile31(path3, "utf8");
+    const raw = await readFile32(path3, "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     let runs = 0;
     let qaApproved = 0;
@@ -21858,7 +22368,7 @@ function asMcpRequest(value) {
 }
 function readRtToken() {
   try {
-    const p = join36(homedir9(), ".crewswarm", "crewswarm.json");
+    const p = join37(homedir10(), ".crewswarm", "crewswarm.json");
     const cfg = JSON.parse(readFileSync5(p, "utf8"));
     return String(cfg?.rt?.authToken || "");
   } catch {
@@ -22521,18 +23031,18 @@ async function startUnifiedServer(options) {
       if (req.method === "GET" && path3 === "/api/rag/stats") {
         if (!checkAuth(req, res)) return;
         try {
-          const { existsSync: existsSync24 } = await import("node:fs");
+          const { existsSync: existsSync26 } = await import("node:fs");
           const query = getQuery(req);
           const projectDir = query.get("projectDir") || options.projectDir;
           const cacheDir = process.env.CREW_RAG_CACHE_DIR || `${projectDir}/.crew/rag-cache`;
           return json(res, 200, {
             projectDir,
             cacheDir,
-            exists: existsSync24(cacheDir),
+            exists: existsSync26(cacheDir),
             modes: {
               keyword: "always available (no cache)",
               importGraph: "always available (no cache)",
-              semantic: existsSync24(`${cacheDir}/embeddings.json`) ? "cached" : "not cached"
+              semantic: existsSync26(`${cacheDir}/embeddings.json`) ? "cached" : "not cached"
             }
           });
         } catch (error) {
@@ -22705,7 +23215,7 @@ async function startUnifiedServer(options) {
       if (req.method === "POST" && path3 === "/v1/index/rebuild") {
         if (!checkAuth(req, res)) return;
         const body = await readJson(req);
-        const paths = Array.isArray(body?.paths) && body.paths.length > 0 ? body.paths : [join36(options.projectDir, "docs"), options.projectDir];
+        const paths = Array.isArray(body?.paths) && body.paths.length > 0 ? body.paths : [join37(options.projectDir, "docs"), options.projectDir];
         latestIndex = await buildCollectionIndex(paths, {
           includeCode: Boolean(body?.includeCode)
         });
@@ -22723,7 +23233,7 @@ async function startUnifiedServer(options) {
         const q = String(getQuery(req).get("q") || "").trim();
         if (!q) return json(res, 400, { error: "q is required" });
         if (!latestIndex) {
-          const fallback = await buildCollectionIndex([join36(options.projectDir, "docs"), options.projectDir], {
+          const fallback = await buildCollectionIndex([join37(options.projectDir, "docs"), options.projectDir], {
             includeCode: false
           });
           latestIndex = fallback;
@@ -22789,7 +23299,7 @@ async function startUnifiedServer(options) {
 // src/sourcegraph/index.ts
 import { spawn as spawn4 } from "node:child_process";
 import { mkdir as mkdir19, writeFile as writeFile18 } from "node:fs/promises";
-import { join as join37 } from "node:path";
+import { join as join38 } from "node:path";
 function runSrcCli(args, cwd = process.cwd()) {
   return new Promise((resolve20) => {
     const child = spawn4("src", args, {
@@ -22829,8 +23339,8 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
   }
   const repos = options.repos.length ? options.repos : ["repo:^github\\.com/.+"];
   const specPath = options.specPath || ".crew/src-batch.spec.yaml";
-  const full = join37(cwd, specPath);
-  await mkdir19(join37(full, ".."), { recursive: true });
+  const full = join38(cwd, specPath);
+  await mkdir19(join38(full, ".."), { recursive: true });
   const yaml = [
     "name: crew-src-batch-plan",
     "description: Generated by crew src batch-plan",
@@ -22864,10 +23374,10 @@ async function createSrcBatchPlan(options, cwd = process.cwd()) {
 // src/repl/index.ts
 import { createInterface, emitKeypressEvents } from "node:readline";
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync18, readFileSync as readFileSync6 } from "node:fs";
-import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile33, readdir as readdir10, writeFile as writeFile20 } from "node:fs/promises";
-import { join as join40 } from "node:path";
-import { homedir as homedir11 } from "node:os";
+import { existsSync as existsSync20, readFileSync as readFileSync6 } from "node:fs";
+import { appendFile as appendFile6, mkdir as mkdir21, readFile as readFile35, readdir as readdir11, writeFile as writeFile21 } from "node:fs/promises";
+import { join as join42 } from "node:path";
+import { homedir as homedir12 } from "node:os";
 import chalk3 from "chalk";
 init_agentkeeper();
 
@@ -22875,7 +23385,7 @@ init_agentkeeper();
 init_agentkeeper();
 init_agent_memory();
 init_collections();
-import { resolve as resolve19, join as join38 } from "node:path";
+import { resolve as resolve19, join as join39 } from "node:path";
 function tokenize3(text) {
   return new Set(
     String(text || "").toLowerCase().replace(/[^a-z0-9\s_-]/g, " ").split(/\s+/).filter((t) => t.length > 2)
@@ -22970,7 +23480,7 @@ var MemoryBroker = class {
     const maxResults = Math.max(1, Number(options.maxResults || 5));
     const includeDocs = options.includeDocs !== false;
     const includeCode = Boolean(options.includeCode);
-    const docsPaths = options.docsPaths && options.docsPaths.length > 0 ? options.docsPaths : [join38(this.projectDir, "docs"), this.projectDir];
+    const docsPaths = options.docsPaths && options.docsPaths.length > 0 ? options.docsPaths : [join39(this.projectDir, "docs"), this.projectDir];
     const [keeperHits, factHits, collectionHits] = await Promise.all([
       this.keeper.recall(query, Math.max(maxResults, 8), {
         preferSuccessful: options.preferSuccessful !== false,
@@ -23019,15 +23529,15 @@ var MemoryBroker = class {
 };
 
 // src/checkpoint/store.ts
-import { mkdir as mkdir20, readFile as readFile32, readdir as readdir9, writeFile as writeFile19 } from "node:fs/promises";
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join39 } from "node:path";
+import { mkdir as mkdir20, readFile as readFile33, readdir as readdir9, writeFile as writeFile19 } from "node:fs/promises";
+import { existsSync as existsSync18 } from "node:fs";
+import { join as join40 } from "node:path";
 var CheckpointStore = class {
   constructor(baseDir = process.cwd()) {
-    this.dir = join39(baseDir, ".crew", "checkpoints");
+    this.dir = join40(baseDir, ".crew", "checkpoints");
   }
   filePath(runId) {
-    return join39(this.dir, `${runId}.json`);
+    return join40(this.dir, `${runId}.json`);
   }
   async beginRun(run) {
     await mkdir20(this.dir, { recursive: true });
@@ -23064,19 +23574,19 @@ var CheckpointStore = class {
   }
   async load(runId) {
     try {
-      const raw = await readFile32(this.filePath(runId), "utf8");
+      const raw = await readFile33(this.filePath(runId), "utf8");
       return JSON.parse(raw);
     } catch {
       return null;
     }
   }
   async list(limit = 20) {
-    if (!existsSync17(this.dir)) return [];
+    if (!existsSync18(this.dir)) return [];
     const files = (await readdir9(this.dir)).filter((f) => f.endsWith(".json")).slice(-Math.max(1, limit));
     const runs = [];
     for (const file of files) {
       try {
-        const raw = await readFile32(join39(this.dir, file), "utf8");
+        const raw = await readFile33(join40(this.dir, file), "utf8");
         runs.push(JSON.parse(raw));
       } catch {
       }
@@ -23177,11 +23687,12 @@ var SLASH_COMMAND_GROUPS = [
   { title: "Model & Engine", commands: ["/stack", "/engine", "/engines", "/mode"] },
   { title: "Sandbox", commands: ["/preview", "/apply", "/rollback", "/branch", "/branches"] },
   { title: "Runtime", commands: ["/tools", "/trace", "/timeline", "/cost", "/system", "/permissions"] },
-  { title: "Context", commands: ["/image", "/search", "/recall", "/sessions", "/resume", "/skills"] }
+  { title: "Context", commands: ["/image", "/search", "/recall", "/sessions", "/resume", "/skills"] },
+  { title: "Agents", commands: ["/summon"] }
 ];
 function readJsonFile(filePath) {
   try {
-    if (!existsSync18(filePath)) return null;
+    if (!existsSync20(filePath)) return null;
     return JSON.parse(readFileSync6(filePath, "utf8"));
   } catch {
     return null;
@@ -23203,16 +23714,16 @@ function printSlashCommandMenu(filter = "") {
   console.log(chalk3.gray("\n  Type a command directly or press Tab to autocomplete.\n"));
 }
 async function listInstalledSkills() {
-  const skillsRoot = join40(homedir11(), ".crewswarm", "skills");
+  const skillsRoot = join42(homedir12(), ".crewswarm", "skills");
   const out = [];
   try {
-    const entries = await readdir10(skillsRoot, { withFileTypes: true });
+    const entries = await readdir11(skillsRoot, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
-        out.push({ name: entry.name.replace(/\.json$/i, ""), type: "api", path: join40(skillsRoot, entry.name) });
+        out.push({ name: entry.name.replace(/\.json$/i, ""), type: "api", path: join42(skillsRoot, entry.name) });
       } else if (entry.isDirectory()) {
-        const skillDoc = join40(skillsRoot, entry.name, "SKILL.md");
-        if (existsSync18(skillDoc)) {
+        const skillDoc = join42(skillsRoot, entry.name, "SKILL.md");
+        if (existsSync20(skillDoc)) {
           out.push({ name: entry.name, type: "knowledge", path: skillDoc });
         }
       }
@@ -23231,7 +23742,7 @@ function resolveConfiguredReplModel(repoConfig) {
     process.env.CREW_EXECUTION_MODEL
   ].map((value) => String(value || "").trim()).filter(Boolean);
   if (envCandidates.length > 0) return envCandidates[0];
-  const swarmCfg = readJsonFile(join40(homedir11(), ".crewswarm", "crewswarm.json")) || {};
+  const swarmCfg = readJsonFile(join42(homedir12(), ".crewswarm", "crewswarm.json")) || {};
   const sharedEnv = swarmCfg?.env && typeof swarmCfg.env === "object" ? swarmCfg.env : {};
   const sharedCandidates = [
     sharedEnv.CREW_CHAT_MODEL,
@@ -23244,7 +23755,7 @@ function resolveConfiguredReplModel(repoConfig) {
 function buildModelSummary(projectDir, state) {
   const envMode = String(process.env.CREW_INTERFACE_MODE || "").toLowerCase();
   const mode = envMode === "connected" ? "connected" : state.useGateway ? "connected" : "standalone";
-  const policyPath = join40(projectDir, ".crew", "model-policy.json");
+  const policyPath = join42(projectDir, ".crew", "model-policy.json");
   const policy = readJsonFile(policyPath) || {};
   const tiers = policy?.tiers && typeof policy.tiers === "object" ? policy.tiers : {};
   const policyTierModels = Array.from(
@@ -23255,7 +23766,7 @@ function buildModelSummary(projectDir, state) {
       })
     )
   );
-  const swarmCfg = readJsonFile(join40(homedir11(), ".crewswarm", "crewswarm.json")) || {};
+  const swarmCfg = readJsonFile(join42(homedir12(), ".crewswarm", "crewswarm.json")) || {};
   const agents = Array.isArray(swarmCfg?.agents) ? swarmCfg.agents : [];
   const agentModels = Array.from(
     new Set(
@@ -23291,14 +23802,14 @@ async function buildRepoBootstrap(projectDir) {
   const ignored = /* @__PURE__ */ new Set([".git", "node_modules", ".crew", "dist"]);
   let topEntries = [];
   try {
-    const entries = await readdir10(projectDir, { withFileTypes: true });
+    const entries = await readdir11(projectDir, { withFileTypes: true });
     topEntries = entries.filter((e) => !ignored.has(e.name)).map((e) => e.isDirectory() ? `${e.name}/` : e.name).sort().slice(0, 20);
   } catch {
     topEntries = [];
   }
   let docs = [];
   try {
-    const docsEntries = await readdir10(join40(projectDir, "docs"), { withFileTypes: true });
+    const docsEntries = await readdir11(join42(projectDir, "docs"), { withFileTypes: true });
     docs = docsEntries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md")).map((e) => `docs/${e.name}`).sort().slice(0, 15);
   } catch {
     docs = [];
@@ -23313,10 +23824,10 @@ async function buildRepoBootstrap(projectDir) {
     "src/repl/index.ts",
     "src/interface/server.ts"
   ];
-  const keyFiles = keyCandidates.filter((p) => existsSync18(join40(projectDir, p)));
+  const keyFiles = keyCandidates.filter((p) => existsSync20(join42(projectDir, p)));
   let readmeSummary = "";
   try {
-    const raw = await readFile33(join40(projectDir, "README.md"), "utf8");
+    const raw = await readFile35(join42(projectDir, "README.md"), "utf8");
     const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
     readmeSummary = lines.slice(0, 3).join(" ").slice(0, 260);
   } catch {
@@ -23634,12 +24145,12 @@ async function startRepl(options) {
   const bannerEnabled = repoConfig?.repl?.bannerEnabled !== false;
   const bannerAnimated = repoConfig?.repl?.animatedBanner !== false;
   const bannerFirstLaunchOnly = repoConfig?.repl?.bannerFirstLaunchOnly === true;
-  const bannerSeenFile = join40(projectDir, ".crew", "repl-banner-seen");
-  const replAuditPath = join40(projectDir, ".crew", "repl-events.jsonl");
-  const shouldRenderBanner = bannerEnabled && (!bannerFirstLaunchOnly || !existsSync18(bannerSeenFile));
+  const bannerSeenFile = join42(projectDir, ".crew", "repl-banner-seen");
+  const replAuditPath = join42(projectDir, ".crew", "repl-events.jsonl");
+  const shouldRenderBanner = bannerEnabled && (!bannerFirstLaunchOnly || !existsSync20(bannerSeenFile));
   let auditSeq = 0;
   let checkpointEnabled = true;
-  if (projectDir === homedir11()) {
+  if (projectDir === homedir12()) {
     console.log(chalk3.yellow("\n  \u26A0 Running from home directory (~). For best results, cd into a project folder first.\n"));
   }
   let repoBootstrap = { projectDir, topEntries: [], docs: [], keyFiles: [], readmeSummary: "" };
@@ -23670,8 +24181,8 @@ async function startRepl(options) {
       console.log(chalk3.cyan(BANNER2));
     }
     try {
-      await mkdir21(join40(projectDir, ".crew"), { recursive: true });
-      await writeFile20(bannerSeenFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
+      await mkdir21(join42(projectDir, ".crew"), { recursive: true });
+      await writeFile21(bannerSeenFile, (/* @__PURE__ */ new Date()).toISOString(), "utf8");
     } catch {
     }
   }
@@ -23709,7 +24220,7 @@ async function startRepl(options) {
           ...payload
         });
       }
-      await mkdir21(join40(projectDir, ".crew"), { recursive: true });
+      await mkdir21(join42(projectDir, ".crew"), { recursive: true });
       await appendFile6(replAuditPath, `${JSON.stringify(event)}
 `, "utf8");
     } catch {
@@ -23765,7 +24276,7 @@ async function startRepl(options) {
         const { readdirSync: readdirSync2, statSync: statSync2 } = __require("fs");
         const { dirname: dirname9, basename } = __require("path");
         const partial = trimmed.split(/\s+/).pop() || "";
-        const dir = partial.includes("/") ? join40(projectDir, dirname9(partial)) : projectDir;
+        const dir = partial.includes("/") ? join42(projectDir, dirname9(partial)) : projectDir;
         const prefix = partial.includes("/") ? basename(partial) : partial;
         const entries = readdirSync2(dir, { withFileTypes: true }).filter((e) => e.name.startsWith(prefix) && !e.name.startsWith(".")).slice(0, 20).map((e) => {
           const full = partial.includes("/") ? dirname9(partial) + "/" + e.name : e.name;
@@ -24341,6 +24852,91 @@ async function startRepl(options) {
       console.log();
       return true;
     }
+    if (command === "/recall") {
+      const query = args.join(" ").trim();
+      if (!query) {
+        console.log(chalk3.yellow("\n  Usage: /recall <search query>\n  Search across past conversations and routing history.\n"));
+        return true;
+      }
+      try {
+        const { recallSearch: recallSearch2, buildRecallContext: buildRecallContext2 } = await Promise.resolve().then(() => (init_chat_recall(), chat_recall_exports));
+        const result2 = await recallSearch2(query, projectDir);
+        if (result2.entries.length === 0) {
+          console.log(chalk3.yellow(`
+  No matches for "${query}" (searched ${result2.totalSearched} entries)
+`));
+        } else {
+          console.log(chalk3.blue(`
+--- Recall: "${query}" (${result2.entries.length}/${result2.totalSearched} matches) ---
+`));
+          for (const entry of result2.entries.slice(0, 10)) {
+            const date = entry.timestamp?.split("T")[0] || "?";
+            const score = (entry.score * 100).toFixed(0);
+            console.log(`  ${chalk3.gray(`[${date}]`)} ${chalk3.cyan(`${score}%`)} ${entry.input?.slice(0, 80) || "(no input)"}`);
+            if (entry.output) console.log(chalk3.gray(`    \u2192 ${entry.output.slice(0, 60)}`));
+          }
+          console.log();
+        }
+      } catch (err) {
+        console.log(chalk3.red(`
+  Recall error: ${err.message}
+`));
+      }
+      return true;
+    }
+    if (command === "/summon") {
+      const persona = args[0];
+      const task = args.slice(1).join(" ").trim();
+      if (!persona || !task) {
+        try {
+          const { listPersonas: listPersonas2 } = await Promise.resolve().then(() => (init_summon(), summon_exports));
+          const personas = listPersonas2();
+          console.log(chalk3.blue("\n--- Available Personas ---\n"));
+          for (const p of personas) {
+            console.log(`  ${chalk3.cyan(p.id.padEnd(20))} ${p.name} (max ${p.defaultMaxTurns} turns)`);
+          }
+          console.log(chalk3.gray("\n  Usage: /summon <persona> <task>\n  Example: /summon crew-qa write tests for src/auth.ts\n"));
+        } catch {
+        }
+        return true;
+      }
+      try {
+        const { getPersona: getPersona2, buildSummonPrompt: buildSummonPrompt2, filterToolsForPersona: filterToolsForPersona2 } = await Promise.resolve().then(() => (init_summon(), summon_exports));
+        const personaConfig = getPersona2(persona);
+        if (!personaConfig) {
+          console.log(chalk3.red(`
+  Unknown persona: ${persona}
+`));
+          return true;
+        }
+        console.log(chalk3.blue(`
+  Summoning ${chalk3.cyan(personaConfig.name)} for: ${task.slice(0, 60)}...
+`));
+        const { runAgenticWorker: runAgenticWorker2 } = await Promise.resolve().then(() => (init_agentic_executor(), agentic_executor_exports));
+        const personaPrompt = buildSummonPrompt2("", personaConfig);
+        const result2 = await runAgenticWorker2(task, sandbox, {
+          systemPrompt: personaPrompt,
+          maxTurns: personaConfig.defaultMaxTurns,
+          projectDir,
+          stream: true,
+          persona: personaConfig.id
+        });
+        if (sandbox.hasChanges()) {
+          console.log(chalk3.yellow("\n  Changes staged. Use /preview to review, /apply to write to disk.\n"));
+        }
+        if (result2.output) {
+          logger3.printWithHighlight(result2.output);
+        }
+        console.log(chalk3.gray(`
+  ${personaConfig.name}: ${result2.success ? "done" : "failed"} in ${result2.turns} turns
+`));
+      } catch (err) {
+        console.log(chalk3.red(`
+  Summon error: ${err.message}
+`));
+      }
+      return true;
+    }
     if (command === "/preview") {
       const activeBranch = sandbox.getActiveBranch();
       if (!sandbox.hasChanges(activeBranch)) {
@@ -24748,7 +25344,7 @@ Completions (${completions.length}):`));
         return true;
       }
       const { resolve: resolvePath } = await import("node:path");
-      const { existsSync: existsSync24 } = await import("node:fs");
+      const { existsSync: existsSync26 } = await import("node:fs");
       const absPath = resolvePath(projectDir, imgPath);
       const ext = absPath.split(".").pop()?.toLowerCase();
       if (!["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "")) {
@@ -24757,7 +25353,7 @@ Completions (${completions.length}):`));
 `));
         return true;
       }
-      if (!existsSync24(absPath)) {
+      if (!existsSync26(absPath)) {
         console.log(chalk3.red(`
   \u2717 File not found: ${absPath}
 `));
@@ -24813,7 +25409,7 @@ Completions (${completions.length}):`));
           for (const f of changedFiles) {
             try {
               const { readFileSync: readFileSync8 } = await import("node:fs");
-              const content = readFileSync8(join40(projectDir, f), "utf8");
+              const content = readFileSync8(join42(projectDir, f), "utf8");
               codeSnippets += `
 ### ${f}
 \`\`\`
@@ -25357,14 +25953,14 @@ init_blast_radius();
 init_agentkeeper();
 
 // src/xai/search.ts
-import { existsSync as existsSync19, readFileSync as readFileSync7 } from "node:fs";
-import { join as join41 } from "node:path";
-import { homedir as homedir12 } from "node:os";
+import { existsSync as existsSync21, readFileSync as readFileSync7 } from "node:fs";
+import { join as join43 } from "node:path";
+import { homedir as homedir13 } from "node:os";
 function getXaiApiKey() {
   if (process.env.XAI_API_KEY) return process.env.XAI_API_KEY;
   if (process.env.GROK_API_KEY) return process.env.GROK_API_KEY;
-  const cfgPath = join41(homedir12(), ".crewswarm", "crewswarm.json");
-  if (!existsSync19(cfgPath)) return null;
+  const cfgPath = join43(homedir13(), ".crewswarm", "crewswarm.json");
+  if (!existsSync21(cfgPath)) return null;
   try {
     const raw = readFileSync7(cfgPath, "utf8");
     const cfg = JSON.parse(raw);
@@ -25430,9 +26026,9 @@ async function runXSearch(query, options = {}) {
 }
 
 // src/config/repo-config.ts
-import { mkdir as mkdir22, readFile as readFile34, writeFile as writeFile21 } from "node:fs/promises";
-import { existsSync as existsSync20 } from "node:fs";
-import { join as join42 } from "node:path";
+import { mkdir as mkdir22, readFile as readFile36, writeFile as writeFile22 } from "node:fs/promises";
+import { existsSync as existsSync22 } from "node:fs";
+import { join as join44 } from "node:path";
 var DEFAULT_CONFIG = {
   cli: {
     model: "",
@@ -25479,7 +26075,7 @@ function parseJsonOrEmpty(raw) {
   }
 }
 function configPath2(baseDir, scope) {
-  return join42(baseDir, ".crew", scope === "team" ? "crewswarm.json" : "config.local.json");
+  return join44(baseDir, ".crew", scope === "team" ? "crewswarm.json" : "config.local.json");
 }
 function assertNoSecrets(input, prefix = "") {
   if (Array.isArray(input)) {
@@ -25512,8 +26108,8 @@ function redactSecrets(input) {
 }
 async function readRepoConfig(baseDir, scope) {
   const path3 = configPath2(baseDir, scope);
-  if (!existsSync20(path3)) return {};
-  const raw = await readFile34(path3, "utf8");
+  if (!existsSync22(path3)) return {};
+  const raw = await readFile36(path3, "utf8");
   return parseJsonOrEmpty(raw);
 }
 async function loadResolvedRepoConfig(baseDir = process.cwd()) {
@@ -25523,11 +26119,11 @@ async function loadResolvedRepoConfig(baseDir = process.cwd()) {
 }
 async function writeRepoConfig(baseDir, scope, config) {
   const path3 = configPath2(baseDir, scope);
-  await mkdir22(join42(baseDir, ".crew"), { recursive: true });
+  await mkdir22(join44(baseDir, ".crew"), { recursive: true });
   if (scope === "team") {
     assertNoSecrets(config);
   }
-  await writeFile21(path3, JSON.stringify(config, null, 2), "utf8");
+  await writeFile22(path3, JSON.stringify(config, null, 2), "utf8");
 }
 async function setRepoConfigValue(baseDir, scope, keyPath, value) {
   if (scope === "team" && SECRET_KEY_RE.test(keyPath)) {
@@ -25765,9 +26361,9 @@ async function runGitHubDoctor(cwd = process.cwd(), repo) {
 }
 
 // src/config/model-policy.ts
-import { existsSync as existsSync21 } from "node:fs";
-import { readFile as readFile35 } from "node:fs/promises";
-import { join as join43 } from "node:path";
+import { existsSync as existsSync23 } from "node:fs";
+import { readFile as readFile37 } from "node:fs/promises";
+import { join as join45 } from "node:path";
 function sanitizeTier(input) {
   const out = {};
   if (!input || typeof input !== "object") return out;
@@ -25782,11 +26378,11 @@ function sanitizeTier(input) {
   return out;
 }
 async function loadModelPolicy(baseDir = process.cwd()) {
-  const path3 = join43(baseDir, ".crew", "model-policy.json");
-  if (!existsSync21(path3)) return {};
+  const path3 = join45(baseDir, ".crew", "model-policy.json");
+  if (!existsSync23(path3)) return {};
   let parsed;
   try {
-    parsed = JSON.parse(await readFile35(path3, "utf8"));
+    parsed = JSON.parse(await readFile37(path3, "utf8"));
   } catch {
     return {};
   }
@@ -25803,9 +26399,9 @@ async function loadModelPolicy(baseDir = process.cwd()) {
 }
 
 // src/autofix/store.ts
-import { mkdir as mkdir23, readFile as readFile36, writeFile as writeFile22 } from "node:fs/promises";
-import { existsSync as existsSync22 } from "node:fs";
-import { join as join44 } from "node:path";
+import { mkdir as mkdir23, readFile as readFile38, writeFile as writeFile23 } from "node:fs/promises";
+import { existsSync as existsSync24 } from "node:fs";
+import { join as join46 } from "node:path";
 import { randomUUID as randomUUID13 } from "node:crypto";
 function createDefaultState() {
   return {
@@ -25815,13 +26411,13 @@ function createDefaultState() {
 }
 var AutoFixStore = class {
   constructor(baseDir = process.cwd()) {
-    this.dir = join44(baseDir, ".crew", "autofix");
-    this.file = join44(this.dir, "queue.json");
+    this.dir = join46(baseDir, ".crew", "autofix");
+    this.file = join46(this.dir, "queue.json");
   }
   async readState() {
-    if (!existsSync22(this.file)) return createDefaultState();
+    if (!existsSync24(this.file)) return createDefaultState();
     try {
-      const raw = await readFile36(this.file, "utf8");
+      const raw = await readFile38(this.file, "utf8");
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.jobs)) return createDefaultState();
       return {
@@ -25877,7 +26473,7 @@ var AutoFixStore = class {
   }
   async writeState(state) {
     await mkdir23(this.dir, { recursive: true });
-    await writeFile22(this.file, JSON.stringify(state, null, 2), "utf8");
+    await writeFile23(this.file, JSON.stringify(state, null, 2), "utf8");
   }
   async enqueue(input) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -25980,8 +26576,8 @@ var AutoFixStore = class {
 // src/autofix/runner.ts
 init_blast_radius();
 import { execSync as execSync6 } from "node:child_process";
-import { mkdir as mkdir24, writeFile as writeFile23 } from "node:fs/promises";
-import { join as join45 } from "node:path";
+import { mkdir as mkdir24, writeFile as writeFile24 } from "node:fs/promises";
+import { join as join47 } from "node:path";
 function hasCompletionSignal(text) {
   const lower = text.toLowerCase();
   const signals = [
@@ -26218,10 +26814,10 @@ async function runAutoFixJob(job, deps) {
         validationFailedCommand: validation.failedCommand || void 0
       };
     }
-    const proposalDir = join45(job.projectDir, ".crew", "autofix", "proposals");
+    const proposalDir = join47(job.projectDir, ".crew", "autofix", "proposals");
     await mkdir24(proposalDir, { recursive: true });
-    const proposalPath = join45(proposalDir, `${job.id}.diff`);
-    await writeFile23(proposalPath, sandbox.preview(changedBranch), "utf8");
+    const proposalPath = join47(proposalDir, `${job.id}.diff`);
+    await writeFile24(proposalPath, sandbox.preview(changedBranch), "utf8");
     await sandbox.rollback(changedBranch);
     await checkpoints.append(runId, "autofix.proposal", {
       policy: job.config.autoApplyPolicy,
@@ -26258,8 +26854,8 @@ async function runAutoFixJob(job, deps) {
 
 // src/cli/index.ts
 import { randomUUID as randomUUID14 } from "node:crypto";
-import { mkdir as mkdir25, readFile as readFile37, writeFile as writeFile24 } from "node:fs/promises";
-import { dirname as dirname8, join as join46 } from "node:path";
+import { mkdir as mkdir25, readFile as readFile39, writeFile as writeFile25 } from "node:fs/promises";
+import { dirname as dirname8, join as join48 } from "node:path";
 import { execSync as execSync7 } from "node:child_process";
 var program = new Command();
 function parseHeadlessShortcutArgs(args) {
@@ -26406,7 +27002,7 @@ function detectCliAuthStatus() {
     const text = (result2.output || "").toLowerCase();
     return text.includes("logged in");
   })() : false;
-  const cursor = hasBinary("cursor") && existsSync23(join46(homedir13(), ".cursor", "User", "globalStorage", "state.vscdb"));
+  const cursor = hasBinary("cursor") && existsSync25(join48(homedir14(), ".cursor", "User", "globalStorage", "state.vscdb"));
   return { claude, codex, cursor };
 }
 function detectSubscriptionEngines(tokens) {
@@ -26478,8 +27074,8 @@ function printJsonEnvelope(kind, payload) {
   }, null, 2));
 }
 async function loadPipelineRunEvents(traceId, baseDir = process.cwd()) {
-  const path3 = join46(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
-  const raw = await readFile37(path3, "utf8");
+  const path3 = join48(baseDir, ".crew", "pipeline-runs", `${traceId}.jsonl`);
+  const raw = await readFile39(path3, "utf8");
   return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
     try {
       return JSON.parse(line);
@@ -26682,9 +27278,9 @@ async function main(args = []) {
     normalizedArgs.splice(idx, 1);
     args = normalizedArgs;
   }
-  const bannerFile = join46(process.env.HOME || homedir13(), ".crew", "cli-banner-seen");
+  const bannerFile = join48(process.env.HOME || homedir14(), ".crew", "cli-banner-seen");
   const showAlways = process.env.CREW_SHOW_BANNER === "1";
-  if (showAlways || !existsSync23(bannerFile)) {
+  if (showAlways || !existsSync25(bannerFile)) {
     const banner = `
 \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557
 \u2551                                                                           \u2551
@@ -26702,15 +27298,15 @@ async function main(args = []) {
     console.log(chalk5.cyan(banner));
     try {
       await mkdir25(dirname8(bannerFile), { recursive: true });
-      await writeFile24(bannerFile, (/* @__PURE__ */ new Date()).toISOString());
+      await writeFile25(bannerFile, (/* @__PURE__ */ new Date()).toISOString());
     } catch (e) {
       logger3.error(`Failed to mark banner as seen: ${e.message}`);
     }
   }
   try {
-    const swarmCfgPath = join46(homedir13(), ".crewswarm", "crewswarm.json");
-    if (existsSync23(swarmCfgPath)) {
-      const swarmCfg = JSON.parse(await readFile37(swarmCfgPath, "utf8"));
+    const swarmCfgPath = join48(homedir14(), ".crewswarm", "crewswarm.json");
+    if (existsSync25(swarmCfgPath)) {
+      const swarmCfg = JSON.parse(await readFile39(swarmCfgPath, "utf8"));
       const providerEnvMap = {
         openai: "OPENAI_API_KEY",
         anthropic: "ANTHROPIC_API_KEY",
@@ -26864,7 +27460,7 @@ ${stdinText}
       let docsBlock = "";
       if (options.docs) {
         const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join46(process.cwd(), "docs"), process.cwd()];
+        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join48(process.cwd(), "docs"), process.cwd()];
         const index = await buildCollectionIndex2(docsPaths, {
           includeCode: Boolean(options.docsCode)
         });
@@ -27593,7 +28189,7 @@ ${stdinText}
       let docsBlock = "";
       if (options.docs) {
         const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
-        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join46(process.cwd(), "docs"), process.cwd()];
+        const docsPaths = options.docsPath && options.docsPath.length > 0 ? options.docsPath : [join48(process.cwd(), "docs"), process.cwd()];
         const index = await buildCollectionIndex2(docsPaths, {
           includeCode: Boolean(options.docsCode)
         });
@@ -27965,7 +28561,7 @@ Please review for correctness, regressions, and security concerns.`;
       process.exit(1);
     }
   });
-  program.command("map").description("Generate a repository structure graph respecting .gitignore").option("--graph", "Emit dependency graph instead of tree output", false).option("--visualize", "Generate interactive HTML graph (implies --graph)", false).option("--out <path>", "Output path for --visualize HTML", join46(process.cwd(), ".crew", "repo-graph.html")).option("--json", "Emit graph as JSON", false).option("--max-nodes <n>", "Limit graph nodes in text mode", "200").action(async (options) => {
+  program.command("map").description("Generate a repository structure graph respecting .gitignore").option("--graph", "Emit dependency graph instead of tree output", false).option("--visualize", "Generate interactive HTML graph (implies --graph)", false).option("--out <path>", "Output path for --visualize HTML", join48(process.cwd(), ".crew", "repo-graph.html")).option("--json", "Emit graph as JSON", false).option("--max-nodes <n>", "Limit graph nodes in text mode", "200").action(async (options) => {
     const {
       buildRepositoryGraph: buildRepositoryGraph2,
       buildRepositoryMap: buildRepositoryMap2,
@@ -27976,12 +28572,12 @@ Please review for correctness, regressions, and security concerns.`;
       if (options.graph || options.visualize) {
         const graph = await buildRepositoryGraph2(process.cwd());
         if (options.visualize) {
-          const htmlPath = String(options.out || join46(process.cwd(), ".crew", "repo-graph.html"));
+          const htmlPath = String(options.out || join48(process.cwd(), ".crew", "repo-graph.html"));
           await mkdir25(dirname8(htmlPath), { recursive: true });
           const html = buildRepositoryGraphHtml2(graph);
-          await writeFile24(htmlPath, html, "utf8");
+          await writeFile25(htmlPath, html, "utf8");
           const dotPath = `${htmlPath}.dot`;
-          await writeFile24(dotPath, buildRepositoryGraphDot2(graph), "utf8");
+          await writeFile25(dotPath, buildRepositoryGraphDot2(graph), "utf8");
           logger3.success(`Wrote graph visualization: ${htmlPath}`);
           logger3.info(`Wrote Graphviz DOT: ${dotPath}`);
           return;
@@ -28535,7 +29131,7 @@ Please review for correctness, regressions, and security concerns.`;
         "## Recent activity",
         ...last.map((entry) => `- ${entry.timestamp} ${entry.type}${entry.agent ? ` (${entry.agent})` : ""}`)
       ].join("\n");
-      await writeFile24(join46(process.cwd(), ".crew", "context-summary.md"), `${summary}
+      await writeFile25(join48(process.cwd(), ".crew", "context-summary.md"), `${summary}
 `, "utf8");
     }
     logger3.success(
@@ -29114,8 +29710,8 @@ Recommended default engine: ${recommended}`));
               tags: entry.tags || []
             }
           }));
-          const { writeFile: writeFile25 } = await import("node:fs/promises");
-          await writeFile25(options.export, `${lines.join("\n")}
+          const { writeFile: writeFile26 } = await import("node:fs/promises");
+          await writeFile26(options.export, `${lines.join("\n")}
 `, "utf8");
         } else {
           await corrections.exportTo(options.export);
@@ -29476,7 +30072,7 @@ Diagnose and provide a fix.`;
   program.command("docs").description("Search project docs and optionally code with source-attributed local RAG").argument("<query...>", "Search query").option("--path <paths...>", "Paths to index (default: docs/ and project root)").option("--code", "Include source code files in the index", false).option("--max <n>", "Max results to return", "8").option("--json", "Output as JSON", false).action(async (queryArray, options) => {
     const { buildCollectionIndex: buildCollectionIndex2, searchCollection: searchCollection2 } = await Promise.resolve().then(() => (init_collections(), collections_exports));
     const query = queryArray.join(" ");
-    const paths = options.path && options.path.length > 0 ? options.path : [join46(process.cwd(), "docs"), process.cwd()];
+    const paths = options.path && options.path.length > 0 ? options.path : [join48(process.cwd(), "docs"), process.cwd()];
     try {
       const index = await buildCollectionIndex2(paths, {
         includeCode: Boolean(options.code)
@@ -29778,7 +30374,7 @@ Diagnose and provide a fix.`;
         for (const f of changedFiles) {
           try {
             const { readFileSync: readFileSync8 } = await import("node:fs");
-            const content = readFileSync8(join46(process.cwd(), f), "utf8");
+            const content = readFileSync8(join48(process.cwd(), f), "utf8");
             codeSnippets += `
 ### ${f}
 \`\`\`
