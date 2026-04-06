@@ -1593,17 +1593,34 @@ const server = http.createServer(async (req, res) => {
         // by inspecting run.json test_command
         async function detectSuite(runDir) {
           try {
-            const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
-            const cmd = r.test_command || "";
+            // Try run.json first
+            let cmd = "";
+            try {
+              const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
+              cmd = r.test_command || "";
+            } catch {
+              // No run.json — try to infer from directory contents
+              try {
+                const ents = await fs.promises.readdir(runDir);
+                const testDirs = ents.filter(e => !e.endsWith(".json") && !e.startsWith("."));
+                // Check first test dir name for suite hint
+                const first = testDirs[0] || "";
+                if (first.includes("test-e2e-")) return "e2e";
+                if (first.includes("test-integration-")) return "integration";
+                if (first.includes("test-unit-")) return "unit";
+                if (first.includes("spec-")) return "playwright";
+              } catch {}
+              return "unknown";
+            }
             if (cmd.includes("test:playwright") || cmd.includes("playwright test")) return "playwright";
             if (cmd.includes("test/e2e/") || cmd.includes("test:e2e")) return "e2e";
             if (cmd.includes("test/integration/")) return "integration";
             if (cmd.includes("test/unit/")) {
-              // If it has ONLY unit tests, it's a unit run; if mixed, it's "all"
               if (cmd.includes("test/integration/") || cmd.includes("test/e2e/")) return "all";
               return "unit";
             }
-            // Check file count heuristic: >100 files = probably "all"
+            if (cmd.includes("test:all")) return "all";
+            if (cmd.includes("crew-cli") || cmd.includes("--prefix crew-cli")) return "crew-cli";
             const fileCount = (cmd.match(/\.test\.mjs/g) || []).length;
             if (fileCount > 100) return "all";
             if (fileCount > 15) return "unit";
@@ -1870,6 +1887,14 @@ const server = http.createServer(async (req, res) => {
         const outputFile = path.join(CREWSWARM_DIR, "test-results", ".test-output.log");
         // Write initial progress
         await fs.promises.writeFile(progressFile, JSON.stringify({ suite, running: true, pid: 0, started: Date.now(), passed: 0, failed: 0, skipped: 0, files_done: 0, current_file: singleFile || "" }));
+        // Clean up any stale progress from a previous interrupted run
+        const staleProgress = path.join(CREWSWARM_DIR, "test-results", ".test-progress.json");
+        try {
+          const prev = JSON.parse(fs.readFileSync(staleProgress, "utf8"));
+          if (prev.running && prev.pid) {
+            try { process.kill(prev.pid, 0); process.kill(prev.pid, "SIGTERM"); } catch { /* already dead */ }
+          }
+        } catch { /* no stale progress */ }
         let child;
         const outFd = fs.openSync(outputFile, "w");
         if (singleFile) {
