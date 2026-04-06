@@ -5,6 +5,39 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2026-04-05
+
+### Added
+- **Execution quality engine** (8 modules): RunState lifecycle, RunEngine with failure-avoidance, StructuredHistory, PatchCritic, DelegationTuner, ToolFilter, TopOfMind, ChatRecall + Summon
+- **29 models at 100/100** quality benchmark — free (Groq Llama 70B, OAuth Claude/GPT) to $0.03/task (Claude Opus)
+- **L2 planner benchmark**: 14 models at 90/100 task decomposition quality
+- **DESIGN.md artifact**: L2 planner generates design system docs alongside PDD, ROADMAP, ARCH
+- **Tool auto-filter**: reduces tool count per task based on detected domains
+- **Top-of-mind**: persistent instructions from ~/.crewswarm/instructions.md and .crew/instructions.md
+- **Chat recall** (`/recall`): semantic search across past sessions
+- **Summon** (`/summon`): switch specialist personas mid-task without context reset
+- **Multi-turn sub-agent dialogue**: `agent_message` tool for spawned sub-agents
+- **Tool activity descriptions**: human-readable progress for every tool call
+- **Relevance-scored memory**: recency, frequency, keyword, and context matching
+- **Testing tab** in Dashboard: per-file runs, live stream, failure drill-down, coverage heatmap
+- **Launch materials**: HN post, Twitter thread, Dev.to article, Reddit posts, Product Hunt, directory submissions
+
+### Changed
+- crew-cli: 0.3.5 → 0.3.13
+- `/model` and `/models` consolidated into `/stack`
+- Brand lowercase: "crewswarm" everywhere across website and docs
+- L2 routing: creation tasks get decomposition, refactors stay atomic
+- All execution personas get full tool access in standalone mode
+- Website: crew-cli added to hero, surfaces expanded to 8, pipeline sections combined on models page
+
+### Fixed
+- White-on-white text on cli.html engine sections
+- Ghost-text autocomplete in REPL
+- DISPATCH route eliminated in standalone mode
+- macOS `/tmp` symlink resolution in path guards
+- Sandbox flush-to-disk before shell commands
+- Smart L2 routing prevents lightweight short-circuit for complex tasks
+
 ## [0.9.4] - 2026-04-03
 
 ### Added
