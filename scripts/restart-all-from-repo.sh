@@ -113,6 +113,8 @@ graceful_kill_pattern "telegram-bridge.mjs"
 graceful_kill_pattern "whatsapp-bridge.mjs"
 graceful_kill_pattern "opencode serve"
 graceful_kill_pattern "pm-loop.mjs"
+graceful_kill_pattern "node --test"        # orphaned test runners from dashboard
+graceful_kill_pattern "npx playwright"     # orphaned playwright runners
 graceful_kill_pattern "apps/vibe/server.mjs"
 graceful_kill_pattern "watch-server.mjs"
 graceful_kill_pattern "vite.*vibe"
@@ -310,6 +312,7 @@ echo "Logs: /tmp/opencode.log /tmp/opencrew-rt-daemon.log /tmp/crew-lead.log /tm
 if [[ -f "$REPO_DIR/scripts/health-check.mjs" ]]; then
   echo ""
   echo -e "${BOLD}Running health check...${RESET}"
+  sleep 2  # let services fully warm up
   "$NODE" "$REPO_DIR/scripts/health-check.mjs" --quiet 2>/dev/null || true
 fi
 

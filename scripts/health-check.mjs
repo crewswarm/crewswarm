@@ -108,7 +108,7 @@ async function run() {
   check("~/.crewswarm/crewswarm.json", hasSwarm ? "pass" : "fail", hasSwarm ? "" : "run: bash install.sh");
 
   const token = getToken();
-  check("Auth token", token ? "pass" : "fail", token ? `${token.slice(0,8)}…` : "missing rt.authToken");
+  check("Auth token", token ? "pass" : "warn", token ? `${token.slice(0,8)}…` : "no rt.authToken (optional for local dev)");
 
   // ── 2. API keys ──────────────────────────────────────────────────────────────
   section("API Keys");
