@@ -21,8 +21,9 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-# ── Service status tracking ──────────────────────────────────────────────────
-declare -A SVC_STATUS  # "up" or "down"
+# ── Service status tracking (bash 3.2 compatible — no associative arrays) ────
+svc_set() { eval "SVC_$(echo "$1" | tr '-' '_')=$2"; }
+svc_get() { eval "echo \${SVC_$(echo "$1" | tr '-' '_'):-unknown}"; }
 
 # ── Graceful kill: SIGTERM first, SIGKILL after 5s ────────────────────────────
 graceful_kill_pattern() {
@@ -71,14 +72,14 @@ wait_for_health() {
   while [ $attempt -lt $max_attempts ]; do
     if curl -s --max-time 2 "$url" > /dev/null 2>&1; then
       echo -e "  ${GREEN}✓${RESET} $name is up"
-      SVC_STATUS[$name]="up"
+      svc_set "$name" "up"
       return 0
     fi
     attempt=$((attempt + 1))
     sleep 1
   done
   echo -e "  ${RED}✗${RESET} $name failed to start (tried ${max_attempts}s)"
-  SVC_STATUS[$name]="down"
+  svc_set "$name" "down"
   return 1
 }
 
@@ -151,11 +152,11 @@ OPENCODE_BIN="$(command -v opencode 2>/dev/null)" || OPENCODE_BIN="/usr/local/bi
 if [[ -x "$OPENCODE_BIN" ]]; then
   nohup "$OPENCODE_BIN" serve --port 4096 --hostname 127.0.0.1 >> /tmp/opencode.log 2>&1 &
   # Non-critical — don't block on health
-  SVC_STATUS["opencode"]="up"
+  svc_set "opencode" "up"
   echo "  Started (PID $!)"
 else
   echo "  (opencode not found; skip)"
-  SVC_STATUS["opencode"]="skip"
+  svc_set "opencode" "skip"
 fi
 
 # ── 2. RT daemon (port 18889) ────────────────────────────────────────────────
@@ -181,7 +182,7 @@ fi
 echo ""
 echo "Starting gateway bridges (crew-main, crew-pm, crew-coder, etc.)..."
 "$NODE" scripts/start-crew.mjs --force
-SVC_STATUS["agents"]="up"
+svc_set "agents" "up"
 sleep 1
 
 # ── 4. crew-lead (port 5010) — CRITICAL ─────────────────────────────────────
@@ -206,27 +207,27 @@ if [[ "$START_DASH" -eq 1 ]]; then
   fi
   wait_for_health "http://127.0.0.1:4319/" "dashboard" 30 || true
 else
-  SVC_STATUS["dashboard"]="skip"
+  svc_set "dashboard" "skip"
 fi
 
 # ── 6. Messaging bridges (Telegram + WhatsApp) ──────────────────────────────
 if [[ "$START_BRIDGES" -eq 1 ]]; then
   echo ""
   # Verify RT bus is still up before starting bridges
-  if [[ "${SVC_STATUS[rt-bus]:-down}" == "up" ]]; then
+  if [[ "$(svc_get rt-bus)" == "up" ]]; then
     echo "Starting Telegram bridge..."
     nohup "$NODE" "$REPO_DIR/telegram-bridge.mjs" >> /tmp/telegram-bridge.log 2>&1 &
-    SVC_STATUS["telegram"]="up"
+    svc_set "telegram" "up"
     echo "  PID: $!"
 
     echo "Starting WhatsApp bridge..."
     nohup "$NODE" "$REPO_DIR/whatsapp-bridge.mjs" >> /tmp/whatsapp-bridge.log 2>&1 &
-    SVC_STATUS["whatsapp"]="up"
+    svc_set "whatsapp" "up"
     echo "  PID: $!"
   else
     echo -e "  ${YELLOW}Skipping messaging bridges — RT bus is not up${RESET}"
-    SVC_STATUS["telegram"]="skip"
-    SVC_STATUS["whatsapp"]="skip"
+    svc_set "telegram" "skip"
+    svc_set "whatsapp" "skip"
   fi
 fi
 
@@ -238,7 +239,7 @@ if ! lsof -ti :5020 >/dev/null 2>&1; then
   wait_for_health "http://127.0.0.1:5020/health" "mcp-server" 15 || true
 else
   echo "  (already running on :5020)"
-  SVC_STATUS["mcp-server"]="up"
+  svc_set "mcp-server" "up"
 fi
 
 # ── 8. Vibe + file watcher (ports 3333, 3334) ───────────────────────────────
@@ -257,18 +258,18 @@ if [[ "$START_STUDIO" -eq 1 ]]; then
   for i in $(seq 1 10); do
     if lsof -ti :3334 >/dev/null 2>&1; then
       echo -e "  ${GREEN}✓${RESET} file watcher is up"
-      SVC_STATUS["file-watcher"]="up"
+      svc_set "file-watcher" "up"
       break
     fi
     if [[ "$i" -eq 10 ]]; then
       echo -e "  ${YELLOW}!${RESET} file watcher not detected on :3334"
-      SVC_STATUS["file-watcher"]="down"
+      svc_set "file-watcher" "down"
     fi
     sleep 1
   done
 else
-  SVC_STATUS["vibe-studio"]="skip"
-  SVC_STATUS["file-watcher"]="skip"
+  svc_set "vibe-studio" "skip"
+  svc_set "file-watcher" "skip"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -280,7 +281,7 @@ echo -e "${BOLD}━━━ Service Summary ━━━${RESET}"
 print_status() {
   local name="$1"
   local port="$2"
-  local status="${SVC_STATUS[$name]:-unknown}"
+  local status="$(svc_get "$name")"
   case "$status" in
     up)   echo -e "  ${GREEN}✓${RESET} $name  :$port" ;;
     down) echo -e "  ${RED}✗${RESET} $name  :$port" ;;
@@ -313,8 +314,8 @@ if [[ -f "$REPO_DIR/scripts/health-check.mjs" ]]; then
 fi
 
 # ── Exit code: 0 if critical services are up, 1 otherwise ────────────────────
-CREW_LEAD_OK="${SVC_STATUS[crew-lead]:-down}"
-DASHBOARD_OK="${SVC_STATUS[dashboard]:-down}"
+CREW_LEAD_OK="$(svc_get crew-lead)"
+DASHBOARD_OK="$(svc_get dashboard)"
 
 if [[ "$CREW_LEAD_OK" == "up" ]] && { [[ "$DASHBOARD_OK" == "up" ]] || [[ "$START_DASH" -eq 0 ]]; }; then
   echo ""
