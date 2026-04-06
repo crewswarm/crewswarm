@@ -37,7 +37,7 @@ Grok has no coding CLI. DeepSeek has no CLI. Qwen, Kimi, Groq, MiniMax, Ollama �
 - 3-tier pipeline: cheap router → expensive planner (only when needed) → tool-using workers
 - Execution quality engine: 8 deterministic modules — failure memory (blocks repeated mistakes), verification gates (no "done" without proof), patch critic (catches unread edits and scope creep), action ranking, task-mode strategies, adaptive weights, structured history, smart delegation. No extra LLM calls
 
-29 models score 100/100 on our coding benchmark. Groq GPT-OSS 20B ($0.0003/task) outputs the same verified TypeScript as Claude Opus ($0.03/task) — 100x cheaper, same quality. The engine prevents the failure modes that make cheap models worse — skipping verification, hallucinating edits, looping. Attach Ollama to your security agent, Groq to your PM, Claude only where it matters.
+29 models score 100/100 on scoped execution tasks (create file, add function, fix bug, write tests, refactor). These are L3 worker tasks — the kind that run in parallel after the planner breaks work down. Groq GPT-OSS 20B ($0.0003/task) produces the same verified TypeScript as Claude Opus ($0.03/task) — 100x cheaper for the same output. 14 models score 90/100 on L2 planning (task decomposition, dependency chains, persona assignment). The engine makes cheap models viable for parallel execution; you only need expensive models for planning.
 
 **Economics:** L1 router $0.075/M → L2 planner $2-3/M (only when needed) → L3 workers $0.0003-0.03/task. Typical feature: $0.02-0.08.
 
