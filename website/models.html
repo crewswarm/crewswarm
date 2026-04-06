@@ -1068,6 +1068,56 @@
       </div>
     </section>
 
+    <section class="models-section">
+      <div class="models-shell">
+        <div class="models-section-heading">
+          <h2>Pipeline tier recommendations</h2>
+          <p>crew-cli runs a 3-tier pipeline. Each tier has different requirements — use cheap/fast models for routing, any model for planning, and proven tool-calling models for execution.</p>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+          <div style="background: var(--bg-card, #1a1a2e); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border, #333);">
+            <h3 style="color: var(--accent, #818cf8); margin-top: 0;">L1: Router</h3>
+            <p style="font-size: 0.85rem; color: var(--text-secondary, #aaa);">Classifies tasks as direct-answer, execute-direct, or execute-parallel. Needs to be fast and cheap — runs on every input.</p>
+            <table style="width:100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem;">
+              <tr><td style="padding:0.3rem;">Groq GPT-OSS 20B</td><td style="text-align:right; color:#22c55e;">$0.08/$0.30</td></tr>
+              <tr><td style="padding:0.3rem;">Gemini 2.5 Flash Lite</td><td style="text-align:right;">$0.10/$0.40</td></tr>
+              <tr><td style="padding:0.3rem;">Groq Llama 3.3 70B</td><td style="text-align:right;">$0.59/$0.79</td></tr>
+              <tr><td style="padding:0.3rem;">Claude Haiku (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+            </table>
+            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">Any model works — routing is a simple classification task.</p>
+          </div>
+          <div style="background: var(--bg-card, #1a1a2e); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border, #333);">
+            <h3 style="color: var(--accent, #818cf8); margin-top: 0;">L2: Planner</h3>
+            <p style="font-size: 0.85rem; color: var(--text-secondary, #aaa);">Generates 8 artifacts (PDD, ROADMAP, ARCH, DESIGN, etc.) then decomposes into work units with dependencies and personas. 14 models tested at 90/100.</p>
+            <table style="width:100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem;">
+              <tr><td style="padding:0.3rem;">GPT-OSS 20B (Groq)</td><td style="text-align:right; color:#22c55e;">$0.003/plan</td></tr>
+              <tr><td style="padding:0.3rem;">Gemini 2.5 Flash Lite</td><td style="text-align:right;">$0.004/plan</td></tr>
+              <tr><td style="padding:0.3rem;">DeepSeek Reasoner</td><td style="text-align:right;">$0.004/plan</td></tr>
+              <tr><td style="padding:0.3rem;">Grok 3 Mini</td><td style="text-align:right;">$0.005/plan</td></tr>
+              <tr><td style="padding:0.3rem;">Claude / GPT-5.4 (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+            </table>
+            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">Prompt engineering does the work — cheap models match GPT-5.4 quality.</p>
+          </div>
+          <div style="background: var(--bg-card, #1a1a2e); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border, #333);">
+            <h3 style="color: var(--accent, #818cf8); margin-top: 0;">L3: Executor</h3>
+            <p style="font-size: 0.85rem; color: var(--text-secondary, #aaa);">Runs agentic tool-calling loops — reads files, writes code, runs tests. 29 models tested at 100/100. Must support structured tool calling.</p>
+            <table style="width:100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem;">
+              <tr><td style="padding:0.3rem;">Gemini 2.5 Flash</td><td style="text-align:right; color:#22c55e;">$0.002/task</td></tr>
+              <tr><td style="padding:0.3rem;">GPT-5.4 (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+              <tr><td style="padding:0.3rem;">DeepSeek Chat</td><td style="text-align:right;">$0.001/task</td></tr>
+              <tr><td style="padding:0.3rem;">Grok 4-1 Fast</td><td style="text-align:right;">$0.001/task</td></tr>
+              <tr><td style="padding:0.3rem;">Claude Sonnet (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+            </table>
+            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">All produce identical quality code — pick by speed and cost.</p>
+          </div>
+        </div>
+        <div style="background: var(--bg-secondary, rgba(255,255,255,0.05)); border-radius: 8px; padding: 1.5rem; margin-top: 2rem;">
+          <h4 style="margin-top:0;">Best value stack: $0.006 per feature</h4>
+          <p style="font-size: 0.85rem;">L1: Groq GPT-OSS 20B ($0.0001) + L2: Gemini Flash Lite ($0.004) + L3: DeepSeek Chat ($0.001) = <strong>$0.006 total</strong> for a complete plan-and-execute cycle. Or use OAuth models for $0 across all tiers.</p>
+        </div>
+      </div>
+    </section>
+
     <section id="model-board" class="models-section">
       <div class="models-shell">
         <div class="models-section-heading">
