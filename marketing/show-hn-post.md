@@ -42,7 +42,7 @@ The engine: 8 deterministic modules — failure memory (blocks repeated mistakes
 
 40+ models, 12+ providers, 45+ tools, ~64K LOC TypeScript.
 
-`npm i -g crewswarm && crewswarm`
+`npm i -g crewswarm && crewswarm` (full platform) or `npm i -g crewswarm-cli && crew doctor` (CLI only)
 
 Repo: https://github.com/crewswarm/crewswarm
 Site: https://crewswarm.ai/
