@@ -43,7 +43,7 @@ PM Loop reads your ROADMAP.md and ships autonomously. Has shipped features overn
 
 Local-first, MIT, ~64K LOC TypeScript.
 
-`npm i -g crewswarm-cli && crew doctor`
+`npm i -g crewswarm && crewswarm`
 
 ## Media Needed
 - [ ] Logo (website/favicon.webp or higher-res version)

@@ -128,7 +128,7 @@ Not every step needs a premium reasoning model. The router is a classification t
 ## Get started
 
 ```bash
-npm i -g crewswarm-cli
+npm i -g crewswarm
 crew doctor
 crew chat "refactor the auth middleware and write tests"
 ```

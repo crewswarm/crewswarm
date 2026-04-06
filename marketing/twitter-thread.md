@@ -88,7 +88,7 @@ It's shipped features overnight while we slept.
 
 open source (MIT). local-first. no cloud.
 
-npm i -g crewswarm-cli && crew doctor
+npm i -g crewswarm && crewswarm
 
 https://crewswarm.ai
 https://github.com/crewswarm/crewswarm
