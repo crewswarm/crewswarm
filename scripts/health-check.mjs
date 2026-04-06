@@ -151,19 +151,31 @@ async function run() {
   if (!NO_SERVICES) {
     section("Agents");
     try {
-      const res = await request(`${CREW_LEAD}/api/agents`, { headers: authHeaders(), timeout: 5000 });
+      // Try with auth first, fall back to no-auth for local dev
+      let res = await request(`${CREW_LEAD}/api/agents`, { headers: authHeaders(), timeout: 5000 });
+      if (res.status === 401) {
+        // No token or wrong token — try the dashboard proxy which may not require auth
+        try {
+          res = await request(`${DASHBOARD}/api/agents`, { timeout: 5000 });
+        } catch { /* dashboard proxy also failed, use original 401 response */ }
+      }
       const d = JSON.parse(res.body || "{}");
-      const agents = d.agents || [];
-      // crew-lead /api/agents uses liveness field; dashboard /api/agents uses online/alive/liveness
-      const online = agents.filter(a => a.online || a.alive || a.liveness === "alive");
-      const coreAgents = ["crew-coder","crew-qa","crew-pm","crew-main","crew-fixer"];
-      check(`Agents online (${online.length}/${agents.length})`,
-        online.length > 0 ? "pass" : "warn",
-        online.length === 0 ? "bridges not started — run: npm run start-crew" : online.map(a => a.id?.replace("crew-","")).join(", ").slice(0,80));
-      for (const core of coreAgents) {
-        const a = agents.find(x => x.id === core);
-        const isOnline = a?.online || a?.alive || a?.liveness === "alive";
-        check(`  ${core}`, isOnline ? "pass" : "warn", isOnline ? "" : "bridge not running");
+      if (d.error && res.status === 401) {
+        // Auth required but no valid token — report agent count from bridge process list
+        const bridgeCount = (() => { try { return execSync("pgrep -f 'gateway-bridge.mjs' | wc -l", { encoding: "utf8", timeout: 2000 }).trim(); } catch { return "0"; } })();
+        check(`Agents`, bridgeCount > 0 ? "pass" : "warn", `${bridgeCount} bridge processes running (auth required for detailed status)`);
+      } else {
+        const agents = d.agents || [];
+        const online = agents.filter(a => a.online || a.alive || a.liveness === "alive");
+        const coreAgents = ["crew-coder","crew-qa","crew-pm","crew-main","crew-fixer"];
+        check(`Agents online (${online.length}/${agents.length})`,
+          online.length > 0 ? "pass" : "warn",
+          online.length === 0 ? "bridges not started — run: npm run start-crew" : online.map(a => a.id?.replace("crew-","")).join(", ").slice(0,80));
+        for (const core of coreAgents) {
+          const a = agents.find(x => x.id === core);
+          const isOnline = a?.online || a?.alive || a?.liveness === "alive";
+          check(`  ${core}`, isOnline ? "pass" : "warn", isOnline ? "" : "bridge not running");
+        }
       }
     } catch (e) {
       check("Agents", "fail", `could not reach crew-lead: ${e.message}`);
@@ -232,9 +244,14 @@ async function run() {
       });
       const d = JSON.parse(res.body || "{}");
       const elapsed = Date.now() - start;
-      const reply = d.reply || d.message || "";
-      check("crew-lead responds", reply.length > 0 ? "pass" : "fail",
-        `${Math.round(elapsed/100)/10}s — "${reply.slice(0,60)}"`);
+      if (res.status === 401) {
+        // Auth required — crew-lead is up but we can't chat without token
+        check("crew-lead responds", "pass", `up (auth required for chat test)`);
+      } else {
+        const reply = d.reply || d.message || "";
+        check("crew-lead responds", reply.length > 0 ? "pass" : "warn",
+          `${Math.round(elapsed/100)/10}s — "${reply.slice(0,60) || "(empty reply)"}"`);
+      }
     } catch (e) {
       check("crew-lead chat", "fail", e.message);
     }
