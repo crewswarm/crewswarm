@@ -1595,6 +1595,7 @@ const server = http.createServer(async (req, res) => {
           try {
             const r = JSON.parse(await fs.promises.readFile(path.join(runDir, "run.json"), "utf8"));
             const cmd = r.test_command || "";
+            if (cmd.includes("test:playwright") || cmd.includes("playwright test")) return "playwright";
             if (cmd.includes("test/e2e/") || cmd.includes("test:e2e")) return "e2e";
             if (cmd.includes("test/integration/")) return "integration";
             if (cmd.includes("test/unit/")) {
