@@ -160,20 +160,21 @@ async function run() {
         } catch { /* dashboard proxy also failed, use original 401 response */ }
       }
       const d = JSON.parse(res.body || "{}");
-      if (d.error && res.status === 401) {
+      // Dashboard returns array directly, crew-lead returns { agents: [...] }
+      const agents = Array.isArray(d) ? d : (d.agents || []);
+      if (agents.length === 0 && d.error) {
         // Auth required but no valid token — report agent count from bridge process list
         const bridgeCount = (() => { try { return execSync("pgrep -f 'gateway-bridge.mjs' | wc -l", { encoding: "utf8", timeout: 2000 }).trim(); } catch { return "0"; } })();
         check(`Agents`, bridgeCount > 0 ? "pass" : "warn", `${bridgeCount} bridge processes running (auth required for detailed status)`);
       } else {
-        const agents = d.agents || [];
-        const online = agents.filter(a => a.online || a.alive || a.liveness === "alive");
+        const online = agents.filter(a => a.online || a.alive || a.liveness === "online" || a.liveness === "alive");
         const coreAgents = ["crew-coder","crew-qa","crew-pm","crew-main","crew-fixer"];
         check(`Agents online (${online.length}/${agents.length})`,
           online.length > 0 ? "pass" : "warn",
           online.length === 0 ? "bridges not started — run: npm run start-crew" : online.map(a => a.id?.replace("crew-","")).join(", ").slice(0,80));
         for (const core of coreAgents) {
           const a = agents.find(x => x.id === core);
-          const isOnline = a?.online || a?.alive || a?.liveness === "alive";
+          const isOnline = a?.online || a?.alive || a?.liveness === "online" || a?.liveness === "alive";
           check(`  ${core}`, isOnline ? "pass" : "warn", isOnline ? "" : "bridge not running");
         }
       }
