@@ -193,7 +193,8 @@
     <h1>One idea.<br />One build.<br /><span class="gradient-text">One crew.</span></h1>
     <p class="hero-sub">The only <a href="#how-it-works"
         style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">multi-agent AI
-        coding platform</a>. Switch between Claude Code, Cursor, Gemini, Codex, and OpenCode mid-conversation.
+        coding platform</a>. Switch between Claude Code, Cursor, Gemini, Codex, OpenCode, and <a href="cli.html"
+        style="color: inherit; text-decoration: underline; text-decoration-color: var(--accent);">crew-cli</a> mid-conversation.
       Parallel agents. Persistent sessions. No vendor lock-in.</p>
     <p class="hero-sub" style="max-width: 54rem; margin-top: 0.85rem;">The mental model is different: you are the PM, the agents are your engineers. Keep multiple workers moving in parallel, unblock them, and ship faster than one person hand-typing everything.</p>
     <div class="proof-bar visible">
@@ -941,7 +942,7 @@
           <h2>One runtime, multiple surfaces.</h2>
           <p class="section-desc">crewswarm is a modular stack. The core orchestration happens under the hood, but you can interact with the crew through whichever surface fits your current workflow.</p>
         </div>
-        <div class="features-grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 2rem;">
+        <div class="features-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-top: 2rem;">
           <div class="feature-card">
             <div class="feature-icon">🧠</div>
             <h3>The System (Core Runtime)</h3>
@@ -954,13 +955,33 @@
           </div>
           <div class="feature-card">
             <div class="feature-icon">💻</div>
-            <h3>crew-cli</h3>
-            <p>The terminal-native interface. Use <code>crew exec "build this"</code> right from your project folder to dispatch the crew without ever leaving your terminal or breaking flow.</p>
+            <h3><a href="cli.html" style="color: inherit; text-decoration: none;">crew-cli</a></h3>
+            <p>The portable execution engine. Gives agentic coding to every model that doesn't have its own CLI — Grok, DeepSeek, Qwen, Groq, local Ollama. 45+ built-in tools and an 8-module quality engine that makes cheap models match premium ones.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">🎛️</div>
             <h3>The Dashboard</h3>
             <p>Your control plane. Manage API keys, assign LLM models to specific agents (like Claude for coding, Groq for fast planning), map local tools, and view the real-time swarm logs.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">💬</div>
+            <h3>crewchat</h3>
+            <p>Native chat surface for quick routing and project context. Lightweight, fast, and connected to the same RT bus as every other surface.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📱</div>
+            <h3>Telegram &amp; WhatsApp</h3>
+            <p>Message your crew from your phone. Dispatch tasks, check status, and review agent output from anywhere. Same agents, same memory, different interface.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔌</div>
+            <h3>OpenClaw Plugin</h3>
+            <p>Use crewswarm as the engineering backend for OpenClaw's desktop and mobile apps. Access the full crew via agent tools, slash commands, or gateway RPC.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">🔗</div>
+            <h3>MCP Server</h3>
+            <p>Expose 64 tools to any MCP-compatible client. Connect crewswarm to Claude Desktop, VS Code, or any tool that speaks Model Context Protocol.</p>
           </div>
         </div>
       </div>

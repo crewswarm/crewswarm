@@ -1,156 +1,155 @@
 ---
-title: "crew-cli: The Multi-Model AI Coding CLI That Makes Claude Code, Codex, and Gemini CLI Work Together"
-tags: "ai, opensource, productivity, devtools, grok"
+title: "crewswarm: The Multi-Agent AI Coding Platform Where You're the PM"
+tags: "ai, opensource, productivity, devtools"
 published: false
-canonical_url: "https://crewswarm.com/blog/crew-cli-multi-model-coding"
+canonical_url: "https://crewswarm.ai/blog/crewswarm-multi-agent-coding"
 ---
 
-# crew-cli: The Multi-Model AI Coding CLI That Makes Claude Code, Codex, and Gemini CLI Work Together
+# crewswarm: The Multi-Agent AI Coding Platform Where You're the PM
 
-Every AI coding CLI locks you into one provider. Claude Code only runs Anthropic models. Codex CLI is OpenAI-only (and doesn't even work on Intel Macs). Gemini CLI is Google-only with no multi-agent orchestration.
+Hit your Claude session limit mid-refactor. Switch to Codex, re-explain everything, lose context. Try Gemini CLI, hit their quota too. Every AI coding tool locks you into one provider, one model, one conversation. You can't switch without starting over.
 
-**What if you could use GPT-5.4 for planning, Grok 4.1 for cheap 2M-context execution, and Gemini Flash for routing — all from one terminal?**
+crewswarm is the orchestration layer that fixes this.
 
-That's crew-cli. An open-source agentic coding CLI with 34+ tools, real-time streaming across 10+ providers, and multi-agent swarm orchestration.
+## What crewswarm is
 
-## Why Another CLI?
+A local-first, open-source platform where you're the PM and AI agents are your engineering team. You describe the work once. The system plans it, dispatches it to specialist agents, runs them in parallel, and verifies the output.
 
-We weren't trying to replace Claude Code. We were trying to solve three problems it can't:
+The mental model: you stop being the typist. You start being the coordinator.
 
-### 1. Provider Lock-in Kills You at Scale
+## The stack
 
-Claude Code hits rate limits. Cursor spikes your CPU to 100% and costs $20/month before API fees. When any single provider goes down or throttles you, you stop working.
+### crew-lead (router)
+Analyzes every task: is this a quick answer, a single-agent job, or does it need parallel execution across multiple specialists?
 
-crew-cli has **10+ LLM providers**: OpenAI, Anthropic, Google, xAI (Grok), DeepSeek, Groq, Together, Fireworks, Moonshot, OpenRouter. If Claude is rate-limited, your next task automatically routes to GPT-5.4 or Grok.
+### Wave orchestrator
+Breaks complex work into parallel waves. crew-coder-back builds the API while crew-coder-front wires the UI while crew-qa writes tests while crew-security audits — all simultaneously, each in an isolated git worktree so they can't step on each other.
 
-### 2. You're Paying Too Much for Simple Tasks
+### 20+ specialist agents
+crew-coder, crew-qa, crew-fixer, crew-security, crew-pm, crew-copywriter, crew-github, crew-architect, and more. Each has its own system prompt, model, and tools. They share persistent memory but get fresh context windows — so no agent is polluted by another's work.
 
-Claude Code charges the same rate whether you're classifying an intent (10 tokens) or doing a multi-file refactor (50K tokens). That's wasteful.
+### 6 coding engines
+Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and crew-cli. Hit a rate limit? The next task routes to a different engine automatically. Session state resumes across all of them — switch mid-conversation without losing context.
 
-crew-cli uses a **3-tier architecture**:
+### PM Loop
+Point it at a ROADMAP.md and walk away. It reads the next unchecked item, dispatches to the right agents, marks it done or failed, and moves on. It ships features autonomously.
 
-```
-L1 (Router):   Groq Llama / Gemini Flash  → $0.075/M tokens
-L2 (Brain):    GPT-5.4 / Grok 4.20        → $2-3/M tokens
-L3 (Workers):  Gemini Flash / DeepSeek     → $0.28/M tokens
-```
+## crew-cli: the missing CLI for every model
 
-**Typical task cost: $0.02-0.08** vs Claude Code's $0.06+ for everything through one expensive model.
+This is the piece that doesn't exist anywhere else.
 
-### 3. One Agent Can't Do Everything
+Grok doesn't have a coding CLI. DeepSeek doesn't have one. Qwen, Kimi, Groq, MiniMax, Ollama — none of them have agentic coding tools. Claude Code only works with Anthropic models. Codex only works with OpenAI. Gemini CLI only works with Google.
 
-Real engineering needs specialization. crew-cli orchestrates **20+ specialist agents** — crew-coder, crew-qa, crew-pm, crew-fixer, crew-security — that collaborate via a real-time WebSocket bus. Each has its own system prompt and can use a different model.
+crew-cli gives **every model** a full agentic coding environment:
 
-## The Killer Features
+- **45+ built-in tools** — file I/O, git, LSP diagnostics, shell, web search, Docker sandbox, memory, sub-agent spawning
+- **3-tier pipeline** — L1 router (cheap model picks the path), L2 planner (expensive model decomposes complex tasks), L3 workers (tool-using execution)
+- **Execution quality engine** — 8 modules that make cheap models perform like premium ones
 
-### `/model` — Built-in Benchmark Dashboard
+### The execution quality engine
 
-No competitor has this. Type `/model` in the REPL and see every model's coding benchmark score, $/M pricing, and context window:
+Every other AI coding CLI runs a blind loop: prompt the model, execute its tool call, repeat until it says "done." There's no memory of what failed, no proof that it worked, no feedback between turns.
 
-```
-  Heavy Tier (L2 Brain):
-  Model                    Score  In $/M  Out $/M  Context  Note
-  ─────────────────────── ───── ─────── ──────── ──────── ──────────────
-  gpt-5.4                  57.3   $3.00   $15.00     128K  #1 coding
-  gemini-3.1-pro           55.5   $2.00   $12.00     200K  #2 coding
-  claude-sonnet-4.6        50.9   $3.00   $15.00     200K
-  grok-4.20-beta           42.2   $2.00    $6.00       2M  2M context
-```
+crew-cli wraps every task in 8 quality modules:
 
-Switch models mid-conversation: `/model grok-4.20-beta` — instantly shows score, cost, and context window.
+1. **Failure memory** — records what went wrong and blocks the model from repeating it
+2. **Verification gate** — won't declare "done" without proof (tests pass, build succeeds, files exist)
+3. **Patch critic** — checks every edit in real time: did you read the file first? Rewriting the same file again? Scope creep? All deterministic, no LLM call
+4. **Action ranking** — scores what the model should do next based on execution state
+5. **Task mode strategies** — bugfix, feature, refactor, and test repair each get different execution approaches
+6. **Adaptive weights** — learns from the current session's trajectory
+7. **Structured history** — preserves full-fidelity state across context compaction
+8. **Smart delegation** — picks the right specialist persona per subtask
 
-### Streaming Across All Providers
+### The result: 29 models at 100/100
 
-Every provider streams token-by-token. Not just the "supported" ones — we wrote custom SSE parsers for Gemini, OpenAI, Anthropic, Grok, DeepSeek, Groq, and OpenRouter. You see thinking in real-time, just like Claude Code, but for any model.
+29 models score perfect on our coding quality benchmark: correct TypeScript, all tests passing, typecheck clean, no regressions.
 
-### `crew doctor` — Environment Diagnostics in 3 Seconds
+| Model | Provider | ~Cost/Task |
+|-------|----------|-----------|
+| Claude (OAuth) | Anthropic | $0 |
+| GPT-5.4 (OAuth) | OpenAI | $0 |
+| GPT-OSS 20B | Groq | $0.0003 |
+| Gemini 2.5 Flash Lite | Google | $0.0004 |
+| DeepSeek Chat | DeepSeek | $0.001 |
+| Grok 4-1 Fast | xAI | $0.001 |
+| Groq Llama 3.3 70B | Groq | $0.002 |
+| Gemini 2.5 Flash | Google | $0.002 |
+| Claude Haiku 4.5 | Anthropic | $0.007 |
+| GPT-5.4 | OpenAI | $0.02 |
+| Claude Sonnet 4.6 | Anthropic | $0.02 |
+| Claude Opus 4.6 | Anthropic | $0.03 |
+
+Plus 17 more at 100/100. Full list in the README.
+
+Groq Llama 70B (free) produces the same verified code as Claude Opus ($0.03/task). The engine is the equalizer. Cheap models fail without it because they skip verification, hallucinate edits, and loop. The engine prevents those failure modes.
+
+## 8 surfaces, one crew
+
+Work from wherever fits your workflow:
+
+- **Vibe** — browser IDE with Monaco editor, integrated terminal, multi-engine chat, and live file sync. Agents edit a file, you see it update in 500ms. No Electron, no install.
+- **Dashboard** — control plane for agents, providers, models, costs, execution traces
+- **crew-cli** — terminal-native. `crew exec "build this"` from your project folder
+- **crewchat** — native chat for quick routing and project context
+- **Telegram & WhatsApp** — message your crew from your phone
+- **OpenClaw** — crewswarm works as a plugin for OpenClaw's desktop apps
+- **MCP server** — expose 64 tools to any MCP-compatible client (Claude Desktop, VS Code)
+
+Same agents, same persistent memory, any surface.
+
+## The economics: pay for brain, not glue
+
+The 3-tier pipeline separates cost by responsibility:
+
+- **L1 router:** Groq GPT-OSS 20B or Gemini Flash Lite — $0.0001/classification
+- **L2 planner:** Claude Sonnet or GPT-5.4 — $0.003-0.02/plan (only when needed)
+- **L3 workers:** Any model through crew-cli — $0.0003-0.03/task
+
+Best value stack: L1 Groq + L2 Gemini Flash Lite + L3 DeepSeek Chat = **$0.006 per feature**.
+
+Not every step needs a premium reasoning model. The router is a classification task. Workers produce identical quality across 29 models because the engine does the heavy lifting. You only pay premium prices for the planner when the task actually needs decomposition.
+
+## Comparison
+
+| Feature | crewswarm | Claude Code | Codex CLI | Gemini CLI | Cursor |
+|---------|-----------|-------------|-----------|------------|--------|
+| Multi-model routing | 40+ models | Anthropic only | OpenAI only | Google only | Multi |
+| Specialist agents | 20+ | 1 | 1 | 1 | 1 |
+| Parallel execution | Git worktrees | No | No | No | No |
+| Built-in tools | 45+ | ~15 | ~10 | ~12 | ~20 |
+| Execution quality engine | 8 modules | No | No | No | No |
+| PM Loop (autonomous) | Yes | No | No | No | No |
+| Session resume across engines | Yes | No | No | No | No |
+| Surfaces | 8 | 1 | 1 | 1 | 1 |
+| Local-first | Yes | Yes | Yes | Yes | Partial |
+| Open source | MIT | No | Yes | No | No |
+
+## Get started
 
 ```bash
-$ crew doctor
-  ✓ Node.js >= 20 — Detected v24.10.0
-  ✓ Git installed
-  ✓ LLM API keys — 6 provider(s): Gemini, Groq, Grok, DeepSeek, OpenAI, Anthropic
-  ✓ CrewSwarm gateway reachable
-  ✓ CLI update status — Up to date
+npm i -g crewswarm-cli
+crew doctor
+crew chat "refactor the auth middleware and write tests"
 ```
 
-When API keys are missing, it suggests the cheapest providers first (Gemini free tier, Groq free tier).
-
-### 34+ Built-in Tools
-
-File I/O, bash shell, git operations, LSP diagnostics, web search, web fetch, Docker sandbox, memory persistence, browser debugging — more tools than any competitor CLI.
-
-### Edge Case Resilience
-
-- **Re-reads files on edit mismatch** — when `String not found`, the executor re-reads the file and returns fresh content to the LLM instead of blindly retrying
-- **Stale response detection** — stops agents that repeat the same answer instead of wasting turns
-- **Auto-retry with correction** — whitespace trimming, path normalization, up to 3 attempts
-
-## Why Grok Users Should Care
-
-**xAI doesn't have an official CLI.** There's no `grok chat` equivalent to `claude code` or `gemini cli`.
-
-crew-cli **is** the Grok CLI:
-
-- Grok 4.1 Fast: **$0.20/M input** with **2 million tokens of context** — that's your entire codebase in one prompt
-- Grok 4.20 Beta: 42.2 coding score at $2/M — 3x cheaper than Claude with competitive quality
-- Works with xAI API keys out of the box: `export XAI_API_KEY=your-key && crew chat`
-
-If you're already paying for xAI API access, crew-cli gives you a production-grade CLI for free.
-
-## The Vibe Play: Multi-CLI from One UI
-
-crew-cli includes **crewswarm Studio (Vibe)** — a full-screen IDE with Monaco editor + agent chat. Think Cursor, but:
-
-- **Pick any model** — not locked to Anthropic or OpenAI
-- **Route around rate limits** — if Claude is throttled, keep working with GPT-5.4 or Grok
-- **Works on Intel Macs** — Codex CLI doesn't. crew-cli does
-- **No GPU spikes** — CLIs don't run VS Code's heavy framework. Your CPU stays at 5%, not 100%
-
-## Comparison Table
-
-| Feature | crew-cli | Claude Code | Codex CLI | Gemini CLI | Cursor |
-|---|---|---|---|---|---|
-| Multi-model routing | ✅ 10+ | ❌ Anthropic | ❌ OpenAI | ❌ Google | ✅ |
-| Built-in tools | ✅ 34+ | ~15 | ~10 | ~12 | ~20 |
-| Parallel agents | ✅ 21 | ❌ | ❌ | ❌ | ❌ |
-| Streaming | ✅ All | ✅ | ✅ | ✅ | ✅ |
-| Diagnostics CLI | ✅ doctor | ❌ | ❌ | ❌ | ❌ |
-| Benchmark dashboard | ✅ /model | ❌ | ❌ | ❌ | ❌ |
-| Intel Mac support | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Cost per task | ~$0.03 | ~$0.06 | ~$0.05 | ~$0.04 | $20/mo+ |
-
-## Get Started
+Or clone the full stack:
 
 ```bash
-git clone https://github.com/crewswarm/crewswarm.git
-cd crewswarm/crew-cli
-npm install && npm run build
-
-# Set at least one API key (Gemini is free)
-export GEMINI_API_KEY=your-key
-
-# Start coding
-node bin/crew.js chat "refactor the auth middleware"
-
-# Or use the REPL
-node bin/crew.js repl
+git clone https://github.com/crewswarm/crewswarm
+cd crewswarm && bash install.sh
 ```
 
-**Docker (servers/teams):**
-```bash
-docker pull crewswarm/crewswarm:latest
-docker compose up -d
-```
+Open the dashboard at `http://localhost:4319` and Vibe at `http://localhost:3333`.
 
-## What's Next
+## Links
 
-- npm publish (`npm i -g crewswarm-cli`)
-- More OpenRouter models (MiniMax, Xiaomi MiMo, GLM-5)
-- Voice mode for hands-free coding
+- **Site:** https://crewswarm.ai
+- **Repo:** https://github.com/crewswarm/crewswarm
+- **Vibe IDE:** https://crewswarm.ai/vibe.html
+- **Models & benchmarks:** https://crewswarm.ai/models.html
+- **Twitter:** https://twitter.com/crewswarm
 
 ---
 
-*crew-cli is open-source under ISC license. Built for developers who want CLI-speed execution, IDE-quality output, and the freedom to pick any model.*
-
-*Star us on GitHub: [crewswarm/crewswarm](https://github.com/crewswarm/crewswarm)*
+*crewswarm is open source under MIT license. Built for developers who want control over which models, which providers, and where their code runs.*

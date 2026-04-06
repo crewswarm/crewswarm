@@ -1071,8 +1071,8 @@
     <section class="models-section">
       <div class="models-shell">
         <div class="models-section-heading">
-          <h2>Pipeline tier recommendations</h2>
-          <p>crew-cli runs a 3-tier pipeline. Each tier has different requirements — use cheap/fast models for routing, any model for planning, and proven tool-calling models for execution.</p>
+          <h2>crew-cli L1 / L2 / L3 pipeline</h2>
+          <p>crew-cli is not one flat model call. The code splits responsibilities across L1 chat, L2 reasoning/planning, and L3 workers. This matters because the best model for chat is not the best model for decomposition, and the best model for decomposition is often too expensive for every small worker task.</p>
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
           <div style="background: var(--bg-card, #1a1a2e); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border, #333);">
@@ -1082,9 +1082,9 @@
               <tr><td style="padding:0.3rem;">Groq GPT-OSS 20B</td><td style="text-align:right; color:#22c55e;">$0.08/$0.30</td></tr>
               <tr><td style="padding:0.3rem;">Gemini 2.5 Flash Lite</td><td style="text-align:right;">$0.10/$0.40</td></tr>
               <tr><td style="padding:0.3rem;">Groq Llama 3.3 70B</td><td style="text-align:right;">$0.59/$0.79</td></tr>
-              <tr><td style="padding:0.3rem;">Claude Haiku (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+              <tr><td style="padding:0.3rem;">Claude Haiku 4.5</td><td style="text-align:right;">$1.00/$5.00</td></tr>
             </table>
-            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">Any model works — routing is a simple classification task.</p>
+            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">Any model works — routing is a simple classification task. L1 should stay responsive and not burn premium reasoning tokens on greetings, clarifications, or simple chat turns.</p>
           </div>
           <div style="background: var(--bg-card, #1a1a2e); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border, #333);">
             <h3 style="color: var(--accent, #818cf8); margin-top: 0;">L2: Planner</h3>
@@ -1094,26 +1094,27 @@
               <tr><td style="padding:0.3rem;">Gemini 2.5 Flash Lite</td><td style="text-align:right;">$0.004/plan</td></tr>
               <tr><td style="padding:0.3rem;">DeepSeek Reasoner</td><td style="text-align:right;">$0.004/plan</td></tr>
               <tr><td style="padding:0.3rem;">Grok 3 Mini</td><td style="text-align:right;">$0.005/plan</td></tr>
-              <tr><td style="padding:0.3rem;">Claude / GPT-5.4 (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+              <tr><td style="padding:0.3rem;">Claude Sonnet 4.6</td><td style="text-align:right;">$3.00/$15.00</td></tr>
+              <tr><td style="padding:0.3rem;">GPT-5.4</td><td style="text-align:right;">$2.50/$15.00</td></tr>
             </table>
-            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">Prompt engineering does the work — cheap models match GPT-5.4 quality.</p>
+            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">Prompt engineering does the work — cheap models match GPT-5.4 quality. This is the right place for expensive reasoning models because L2 is deciding how to break down and validate the work graph.</p>
           </div>
           <div style="background: var(--bg-card, #1a1a2e); border-radius: 12px; padding: 1.5rem; border: 1px solid var(--border, #333);">
             <h3 style="color: var(--accent, #818cf8); margin-top: 0;">L3: Executor</h3>
             <p style="font-size: 0.85rem; color: var(--text-secondary, #aaa);">Runs agentic tool-calling loops — reads files, writes code, runs tests. 29 models tested at 100/100. Must support structured tool calling.</p>
             <table style="width:100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 1rem;">
               <tr><td style="padding:0.3rem;">Gemini 2.5 Flash</td><td style="text-align:right; color:#22c55e;">$0.002/task</td></tr>
-              <tr><td style="padding:0.3rem;">GPT-5.4 (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
               <tr><td style="padding:0.3rem;">DeepSeek Chat</td><td style="text-align:right;">$0.001/task</td></tr>
               <tr><td style="padding:0.3rem;">Grok 4-1 Fast</td><td style="text-align:right;">$0.001/task</td></tr>
-              <tr><td style="padding:0.3rem;">Claude Sonnet (OAuth)</td><td style="text-align:right; color:#22c55e;">free</td></tr>
+              <tr><td style="padding:0.3rem;">GPT-5.4</td><td style="text-align:right;">$0.02/task</td></tr>
+              <tr><td style="padding:0.3rem;">Claude Sonnet 4.6</td><td style="text-align:right;">$0.02/task</td></tr>
             </table>
-            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">All produce identical quality code — pick by speed and cost.</p>
+            <p style="font-size: 0.75rem; color: var(--text-secondary, #666); margin-top: 0.5rem;">All produce identical quality code — pick by speed and cost. Cheap fast models are often correct here, with premium models reserved for hard coding tasks or fallback lanes.</p>
           </div>
         </div>
-        <div style="background: var(--bg-secondary, rgba(255,255,255,0.05)); border-radius: 8px; padding: 1.5rem; margin-top: 2rem;">
+        <div style="background: var(--bg-card2, rgba(255,255,255,0.05)); border-radius: 8px; padding: 1.5rem; margin-top: 2rem;">
           <h4 style="margin-top:0;">Best value stack: $0.006 per feature</h4>
-          <p style="font-size: 0.85rem;">L1: Groq GPT-OSS 20B ($0.0001) + L2: Gemini Flash Lite ($0.004) + L3: DeepSeek Chat ($0.001) = <strong>$0.006 total</strong> for a complete plan-and-execute cycle. Or use OAuth models for $0 across all tiers.</p>
+          <p style="font-size: 0.85rem;">L1: Groq GPT-OSS 20B ($0.0001) + L2: Gemini Flash Lite ($0.004) + L3: DeepSeek Chat ($0.001) = <strong>$0.006 total</strong> for a complete plan-and-execute cycle.</p>
         </div>
       </div>
     </section>
@@ -1370,48 +1371,7 @@
       </div>
     </section>
 
-    <section id="brain-vs-execution" class="models-section">
-      <div class="models-shell">
-        <div class="models-section-heading">
-          <h2>`crew-cli` L1 / L2 / L3 stack</h2>
-          <p>
-            `crew-cli` is not one flat model call. The code splits responsibilities across L1 chat, L2 reasoning/planning,
-            and L3 workers. This matters because the best model for chat is not the best model for decomposition, and the
-            best model for decomposition is often too expensive for every small worker task.
-          </p>
-        </div>
-        <div class="models-grid-3">
-          <article class="models-card">
-            <span class="models-card-tag">L1 chat interface</span>
-            <h3>Fast, cheap, user-facing</h3>
-            <p><strong>Best fits:</strong> Grok 4.1 Fast, Gemini 2.5 Flash, GPT-5 mini.</p>
-            <p>L1 should stay responsive and not burn premium reasoning tokens on greetings, clarifications, or simple chat turns. In the code, L1 does not execute tasks; it passes them to L2 and synthesizes results back.</p>
-          </article>
-          <article class="models-card">
-            <span class="models-card-tag">L2 reasoning / planning</span>
-            <h3>Heavy brain layer</h3>
-            <p><strong>Best fits:</strong> Claude Sonnet 4.6, GPT-5.4, Gemini 3.1 Pro.</p>
-            <p>This is where the router, planner, decomposer, and validator live. This is the right place for expensive reasoning models because L2 is deciding how to break down and validate the work graph.</p>
-          </article>
-          <article class="models-card">
-            <span class="models-card-tag">L3 workers</span>
-            <h3>Scoped execution</h3>
-            <p><strong>Best fits:</strong> Kimi K2.5, Gemini 2.5 Flash, GPT-5.3 Codex.</p>
-            <p>L3 workers should usually execute bounded tasks, not act like mini CEOs. That means cheap fast models are often correct here, with premium models reserved for hard coding workers or fallback lanes.</p>
-          </article>
-        </div>
-        <div class="models-mini-grid">
-          <article class="models-mini-card">
-            <h4>What the code says</h4>
-            <p><strong>L1</strong> is chat only, <strong>L2</strong> is router/reasoner/planner, and <strong>L3</strong> is the worker execution layer. That matches the implementation in <code>crew-cli</code>, not just a marketing diagram.</p>
-          </article>
-          <article class="models-mini-card">
-            <h4>Practical default</h4>
-            <p>Use a cheap fast model for L1, a premium reasoning model for L2, and smaller faster workers for L3 unless a task clearly needs a premium coding model.</p>
-          </article>
-        </div>
-      </div>
-    </section>
+    <!-- L1/L2/L3 content merged into Pipeline tier recommendations section above -->
 
     <section class="models-section">
       <div class="models-shell">
@@ -1448,23 +1408,23 @@
                 <tr>
                   <td><strong>crew-coder / crew-fixer</strong></td>
                   <td>Claude Sonnet 4.6, GPT-5.4</td>
-                  <td>Codex CLI, Claude Code, OpenCode</td>
+                  <td>Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, crew-cli</td>
                   <td>GPT-5.3 Codex, Claude Sonnet 4.6, Kimi K2.5</td>
-                  <td>These roles need real file edits, terminals, tools, and multi-step execution.</td>
+                  <td>These roles need real file edits, terminals, tools, and multi-step execution. All 6 engines work. crew-cli is the only option for Grok, DeepSeek, Qwen, Kimi, and local models.</td>
                 </tr>
                 <tr>
                   <td><strong>crew-coder-front / back</strong></td>
                   <td>Claude Sonnet 4.6, GPT-5.4</td>
-                  <td>Codex CLI, Claude Code, OpenCode</td>
+                  <td>Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, crew-cli</td>
                   <td>GPT-5.3 Codex, Claude Sonnet 4.6, GLM-5, Kimi K2.5</td>
-                  <td>Same pattern as coders: strong chat model up top, real worker model underneath.</td>
+                  <td>Same as coders: all 6 engines work. crew-cli is the only option for Grok, DeepSeek, Qwen, Kimi, and local models.</td>
                 </tr>
                 <tr>
                   <td><strong>crew-pm / crew-qa / crew-seo</strong></td>
                   <td>Gemini 2.5 Flash, Grok 4.1 Fast Reasoning</td>
-                  <td>Direct API</td>
+                  <td>Direct API, Gemini CLI, Codex CLI, crew-cli</td>
                   <td>Usually same as chat brain</td>
-                  <td>These are mostly analysis, summaries, triage, and planning lanes. A CLI is often unnecessary.</td>
+                  <td>Mostly analysis, summaries, triage, and planning. Direct API is fine for chat-only work, but routing through a CLI engine gives these agents file access and tool use when needed.</td>
                 </tr>
                 <tr>
                   <td><strong>crew-researcher</strong></td>
@@ -1483,9 +1443,9 @@
                 <tr>
                   <td><strong>Local / private lane</strong></td>
                   <td>Ollama Llama 3.1 8B</td>
-                  <td>Direct API or local OpenCode lane</td>
+                  <td>crew-cli or local OpenCode lane</td>
                   <td>Ollama Qwen 2.5 Coder 7B, Ollama Llama 3.1 8B</td>
-                  <td>Useful when privacy, offline use, or near-zero cost matters more than raw quality.</td>
+                  <td>Useful when privacy, offline use, or near-zero cost matters more than raw quality. crew-cli gives local models the full 45+ tool system.</td>
                 </tr>
               </tbody>
             </table>
@@ -1493,12 +1453,12 @@
         </div>
         <div class="models-mini-grid">
           <article class="models-mini-card">
-            <h4>Chat &amp; research &rarr; Direct API</h4>
-            <p><code>crew-pm</code>, <code>crew-qa</code>, <code>crew-seo</code>, <code>crew-copywriter</code>, <code>crew-telegram</code>, and coordinator roles run fine as cheap, fast Direct API lanes. Use Gemini 2.5 Flash, Grok 4.1 Fast, or Perplexity Sonar &mdash; no CLI overhead needed.</p>
+            <h4>Chat &amp; research &rarr; Direct API or lightweight CLI</h4>
+            <p><code>crew-pm</code>, <code>crew-qa</code>, <code>crew-seo</code>, <code>crew-copywriter</code>, and coordinator roles run fine as Direct API lanes for chat-only work. But routing them through Gemini CLI, Codex CLI, or crew-cli gives them file access and tools when tasks go beyond analysis.</p>
           </article>
           <article class="models-mini-card">
             <h4>Coding &amp; fixing &rarr; CLI engine</h4>
-            <p><code>crew-coder</code>, <code>crew-fixer</code>, <code>crew-coder-front</code>, and <code>crew-coder-back</code> should always run through a CLI engine (Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, or crew-cli). Assign strong models here &mdash; Claude Sonnet 4.6, GPT-5.4, Kimi K2.5 &mdash; so they get tool access, file edits, and terminals.</p>
+            <p><code>crew-coder</code>, <code>crew-fixer</code>, <code>crew-coder-front</code>, and <code>crew-coder-back</code> should always run through a CLI engine (Claude Code, Codex CLI, Gemini CLI, Cursor CLI, OpenCode, or crew-cli). crew-cli is the only option for models without their own CLI &mdash; Grok, DeepSeek, Qwen, Kimi, Groq, and local Ollama models all get full agentic coding through crew-cli's 45+ tools and quality engine.</p>
           </article>
           <article class="models-mini-card">
             <h4>Don't waste big models on Direct API</h4>
