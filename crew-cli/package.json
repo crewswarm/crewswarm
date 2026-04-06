@@ -71,7 +71,7 @@
   "bugs": {
     "url": "https://github.com/crewswarm/crewswarm/issues"
   },
-  "author": "CrewSwarm <hello@crewswarm.ai>",
+  "author": "crewswarm <info@crewswarm.ai>",
   "license": "MIT",
   "publishConfig": {
     "access": "public"

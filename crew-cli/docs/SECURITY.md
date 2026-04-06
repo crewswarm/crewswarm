@@ -6,7 +6,7 @@ Only the latest major version (`v0.1.x` and above) receives security updates.
 
 ## Reporting a Vulnerability
 
-Please do not open a public issue for security vulnerabilities. Instead, responsibly disclose them by emailing security@crewswarm.ai.
+Please do not open a public issue for security vulnerabilities. Instead, responsibly disclose them by emailing info@crewswarm.ai.
 
 We will acknowledge receipt within 48 hours and provide a timeline for resolution.
 
