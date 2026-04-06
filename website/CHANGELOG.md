@@ -5,6 +5,98 @@ All notable changes to crewswarm will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2026-04-05
+
+### Added
+- **Execution quality engine** (8 modules): RunState lifecycle, RunEngine with failure-avoidance, StructuredHistory for full-fidelity state, PatchCritic for per-turn edit quality, DelegationTuner for persona/model routing, ToolFilter for task-based tool pruning, TopOfMind persistent instructions, ChatRecall + Summon for runtime specialization
+- **29 models at 100/100** quality benchmark — from free (Groq Llama 70B, OAuth Claude/GPT) to $0.03/task (Claude Opus)
+- **L2 planner benchmark**: 14 models at 90/100 task decomposition quality
+- **DESIGN.md artifact**: L2 planner now generates design system docs alongside PDD, ROADMAP, ARCH
+- **Tool auto-filter**: reduces tool count per task based on detected domains (coding, git, web, etc.)
+- **Top-of-mind**: persistent instructions from ~/.crewswarm/instructions.md and .crew/instructions.md injected every turn
+- **Chat recall** (`/recall`): semantic search across past sessions — keyword + fuzzy token matching
+- **Summon** (`/summon`): switch specialist personas mid-task without context reset
+- **Multi-turn sub-agent dialogue**: `agent_message` tool for back-and-forth with spawned sub-agents
+- **Tool activity descriptions**: human-readable progress text for every tool call during streaming
+- **Relevance-scored memory**: recency, frequency, keyword, and context matching for memory retrieval
+- **Animated demo GIF** in README
+- **Testing tab** in Dashboard: per-file runs, stale indicators, live stream, failure drill-down, coverage heatmap, history charts
+- **15 Playwright tests** for Testing tab covering all 8 new dashboard features
+
+### Changed
+- crew-cli version: 0.3.5 → 0.3.13
+- `/model` and `/models` consolidated into `/stack` command
+- Brand lowercase: "crewswarm" everywhere (was mixed "CrewSwarm")
+- L2 routing: creation tasks get full decomposition, refactors stay atomic
+- All execution personas now get full tool access in standalone mode
+- Effort detection improved for multi-part tasks
+- Benchmark regression checks compare against baseline, not absolute scores
+
+### Fixed
+- Ghost-text autocomplete in REPL
+- DISPATCH route eliminated in standalone mode (cleaner L1/L2 router alignment)
+- Noisy logging suppressed in standalone mode
+- macOS `/tmp` symlink resolution in path guards (was causing 5/6 benchmark failures)
+- Sandbox flush-to-disk before shell commands
+- Edit gate + mutation check in deterministic QA gate
+- Smart L2 routing prevents lightweight short-circuit for complex tasks
+
+## [0.9.4] - 2026-04-03
+
+### Added
+- **Claude + OpenAI OAuth subscription providers**: full billing attribution with CCH signing
+- **Dynamic OpenAPI generator**: auto-discovers 262 endpoints from source (later 264)
+- **Git worktree isolation**: parallel wave agents each get isolated worktrees, auto-cleanup, squash merge back
+- **LSP, NotebookEdit, SpawnAgent tools**: code intelligence, Jupyter support, autonomous sub-agents
+- **Worktree/sleep/tool-search tools**: enter_worktree, exit_worktree, merge_worktree, list_worktrees
+- **Streaming tool execution**: smart batching, context compaction, abort, budget tracking, scratchpad
+- **Post-sampling hooks**: run custom logic after each LLM+tool turn
+- **Max-output recovery**: detects truncation, compacts and retries
+- **Reactive compaction**: auto-compact on context-too-long errors
+- **CI pipeline**: unit + crew-cli + Playwright tests run in parallel on push/PR
+- **4,530 tests** across unit, integration, crew-cli, and Playwright suites
+- **Quality benchmark**: tests code correctness (tsc --strict, test pass, no regressions), not just file creation
+
+### Changed
+- Tool count: 34+ → 45+
+- OpenAPI spec: 142 → 264 endpoints
+- Test count: ~900 → 4,530
+- Dashboard: 249 sync I/O calls converted to async
+- npm start now launches full stack (RT bus + crew-lead + dashboard)
+
+### Fixed
+- Spending cap checks + OAuth TTL refresh
+- Auth tokens and selectors for Playwright specs
+- Stale pm-loop processes killed between test blocks
+- OpenCode default model prefix corrected
+- crew-lead health status no longer dumped on greetings
+- Read-before-edit guard extended to append_file
+
+## [0.9.3] - 2026-03-30
+
+### Added
+- **Execution Quality Engine section** on website index.html and cli.html
+- **Benchmark callout**: 18 models at 100/100 (later expanded to 29)
+- **OpenCode/Zen provider**: 7 model prefixes, 39 models + free tier
+- **Hard tier benchmark**: multi-file coding tasks
+- **CREW_PROVIDER env var**: explicit provider routing for `/model` command
+- **Cerebras, Mistral, NVIDIA providers**: added to provider resolver and config key loader
+- **Fireworks, Together, Hugging Face**: added to config key loader
+- **Adaptive weights**: learn from benchmark trajectories
+- **Sweep script**: automated multi-model benchmark runs
+
+### Changed
+- Benchmark methodology: fair regression checks against baseline
+- Model pass-through: unrecognized prefixes route to provider directly
+- Absolute paths normalized to relative in editFile sandbox operations
+
+### Fixed
+- Flush sandbox to disk before shell commands
+- Low-effort turn limit: 3 → 6
+- `.crew/` directory excluded from diffs
+- qaApproved defaults to false when deterministic gate rejects
+- Filesystem sync before quality benchmark checks
+
 ## [0.9.2] - 2026-03-29
 
 ### Added
