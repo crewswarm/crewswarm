@@ -575,7 +575,7 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     // 1. Claude OAuth (macOS Keychain — Claude Max/Pro subscription)
     // All 3 tiers work: Haiku, Sonnet, Opus. Default is Sonnet 4.6.
     // Override via CREW_OAUTH_CLAUDE_MODEL env var or dashboard Models tab.
-    if (!wantsOpenAI && !wantsGemini || wantsClaude || !effectiveModel) {
+    if (wantsClaude || (!wantsOpenAI && !wantsGemini && !effectiveModel)) {
       try {
         const oauth = await getOAuthToken();
         if (oauth?.accessToken) {
@@ -591,7 +591,7 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     }
 
     // 2. OpenAI OAuth (Codex CLI auth — ChatGPT Plus/Pro subscription)
-    if (wantsOpenAI || (!wantsClaude && !wantsGemini) || !effectiveModel) {
+    if (wantsOpenAI || (!wantsClaude && !wantsGemini && !effectiveModel)) {
       try {
         const oauth = await getOpenAIOAuthToken();
         if (oauth?.accessToken) {
@@ -610,7 +610,7 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     }
 
     // 3. Gemini OAuth (Google ADC or Gemini CLI — Google account)
-    if (wantsGemini || (!wantsClaude && !wantsOpenAI) || !effectiveModel) {
+    if (wantsGemini || (!wantsClaude && !wantsOpenAI && !effectiveModel)) {
       try {
         const oauth = await getGeminiOAuthToken();
         if (oauth?.accessToken) {

@@ -50,6 +50,23 @@ crew branch explore-socketio main
 crew chat "Implement a basic Socket.IO server"
 
 # Compare the current branch with main
+
+## 4. Hello Command
+
+A simple command that prints "hello" to stdout. Useful for smoke tests and verifying CLI installation.
+
+```bash
+crew hello
+```
+
+## 4. Hello Command
+
+Use the `hello` command to quickly verify the CLI is working.
+
+```bash
+npx crewswarm-cli hello
+```
+ain
 crew preview
 
 # If you like the Socket.IO approach, switch and merge it

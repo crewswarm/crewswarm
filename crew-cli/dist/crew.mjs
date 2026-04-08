@@ -8196,7 +8196,7 @@ async function resolveProvider(modelOverride, preferTier) {
     const wantsOpenAI = effectiveModel.includes("gpt") || effectiveModel.includes("openai") || effectiveModel.includes("o3") || effectiveModel.includes("o4");
     const wantsGemini = effectiveModel.includes("gemini");
     const wantsClaude = effectiveModel.includes("claude") || effectiveModel.includes("sonnet") || effectiveModel.includes("opus") || effectiveModel.includes("haiku");
-    if (!wantsOpenAI && !wantsGemini || wantsClaude || !effectiveModel) {
+    if (wantsClaude || !wantsOpenAI && !wantsGemini && !effectiveModel) {
       try {
         const oauth = await getOAuthToken();
         if (oauth?.accessToken) {
@@ -8218,7 +8218,7 @@ async function resolveProvider(modelOverride, preferTier) {
       } catch {
       }
     }
-    if (wantsOpenAI || !wantsClaude && !wantsGemini || !effectiveModel) {
+    if (wantsOpenAI || !wantsClaude && !wantsGemini && !effectiveModel) {
       try {
         const oauth = await getOpenAIOAuthToken();
         if (oauth?.accessToken) {
@@ -8234,7 +8234,7 @@ async function resolveProvider(modelOverride, preferTier) {
       } catch {
       }
     }
-    if (wantsGemini || !wantsClaude && !wantsOpenAI || !effectiveModel) {
+    if (wantsGemini || !wantsClaude && !wantsOpenAI && !effectiveModel) {
       try {
         const oauth = await getGeminiOAuthToken();
         if (oauth?.accessToken) {

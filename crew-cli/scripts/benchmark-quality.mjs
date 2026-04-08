@@ -212,7 +212,7 @@ const TASKS = [
 
 function runCommand(cmd, cwd) {
   try {
-    const output = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8', timeout: 180000 });
+    const output = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8', timeout: 300000 });
     return { ok: true, output: output.trim(), exitCode: 0 };
   } catch (err) {
     return {
