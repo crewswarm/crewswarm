@@ -644,6 +644,20 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
   // ── API key providers (fallback when OAuth unavailable) ──
   // If a specific model is requested, find the matching provider
   if (effectiveModel) {
+    // Ollama catch-all: any model with ":cloud" suffix or known Ollama local models
+    // Route to Ollama's OpenAI-compatible API — no API key needed
+    const isOllamaModel = effectiveModel.includes(':cloud') || effectiveModel.includes(':latest')
+      || /^(qwen|llama|gemma|phi|mistral|deepseek-coder|codellama|lfm)\d*[-.:]/.test(effectiveModel);
+    if (isOllamaModel) {
+      return {
+        key: 'ollama',
+        model: modelOverride || effectiveModel,
+        driver: 'openai',
+        apiUrl: 'http://localhost:11434/v1/chat/completions',
+        id: 'ollama'
+      };
+    }
+
     // Models with provider/ prefix (e.g. anthropic/claude-sonnet-4.6, qwen/qwen3-coder)
     // are OpenRouter model slugs — route to OpenRouter directly
     // Slash-prefixed models (moonshotai/kimi-k2, openai/gpt-oss-120b, qwen/qwen3-32b)
@@ -665,25 +679,22 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     }
 
     for (const p of PROVIDER_ORDER) {
-      const isKeyless = p.id === 'ollama'; // Ollama runs locally, no API key needed
+      const isKeyless = p.id === 'ollama';
       const key = isKeyless ? 'ollama' : process.env[p.envKey];
       if (!isKeyless && (!key || key.length < 5)) continue;
       if (p.envKey === 'GOOGLE_API_KEY' && process.env.GEMINI_API_KEY) continue;
       if (p.modelPrefix && effectiveModel.includes(p.modelPrefix)) {
-        // Ollama cloud models have ":cloud" suffix — don't match them against non-Ollama providers
-        if (p.id !== 'ollama' && effectiveModel.includes(':cloud')) continue;
         return { key: key || 'ollama', model: modelOverride || process.env.CREW_EXECUTION_MODEL || p.model, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
       }
     }
 
-    // No prefix match — try any OpenAI-compatible provider with the requested model name.
-    // This handles cases like kimi-k2-instruct on Groq where the model exists on the
-    // provider but our modelPrefix doesn't match. Send the model name as-is and let
-    // the provider reject if it doesn't support it.
+    // No prefix match — warn and try OpenAI-compatible provider as last resort
+    console.warn(`[crew-cli] ⚠️ No provider matched model "${effectiveModel}" — trying OpenAI-compatible fallback`);
     for (const p of PROVIDER_ORDER) {
       const key = process.env[p.envKey];
       if (!key || key.length < 5) continue;
       if (p.driver === 'openai' || p.driver === 'openrouter') {
+        console.warn(`[crew-cli] ⚠️ Falling back to ${p.id} (${p.apiUrl}) — model may not be available there`);
         return { key, model: modelOverride || effectiveModel, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
       }
     }
