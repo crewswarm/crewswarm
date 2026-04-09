@@ -571,9 +571,88 @@ function compactToolDeclarations(tools: ToolDeclaration[], turn: number, model?:
 }
 
 async function resolveProvider(modelOverride?: string, preferTier?: string): Promise<ResolvedProvider | null> {
-  const effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
+  let effectiveModel = (modelOverride || process.env.CREW_EXECUTION_MODEL || '').trim().toLowerCase();
 
-  // ── OAuth first: subscription-based auth (free, highest priority) ──
+  // ── PRIORITY 0: Explicit provider:model format (e.g. groq:llama-3.3-70b, ollama:glm-5.1:cloud) ──
+  // Unambiguous routing — skips all guessing. Provider ID before first colon (unless it's a model tag like :cloud/:latest).
+  const providerModelMatch = effectiveModel.match(/^([a-z][\w-]*):(.+)$/);
+  if (providerModelMatch) {
+    const [, explicitProvider, modelPart] = providerModelMatch;
+    // Skip if the "provider" part is actually a model tag (cloud, latest, 31b, etc.)
+    const isModelTag = /^\d+b$|^cloud$|^latest$|^q\d|^fp\d|^gguf$/i.test(modelPart.split(':')[0] || '');
+    if (!isModelTag) {
+      const providerAliases: Record<string, string> = {
+        'anthropic': 'anthropic', 'claude': 'anthropic',
+        'openai': 'openai', 'gpt': 'openai',
+        'google': 'gemini', 'gemini': 'gemini',
+        'xai': 'grok', 'grok': 'grok',
+        'groq': 'groq',
+        'deepseek': 'deepseek',
+        'mistral': 'mistral',
+        'cerebras': 'cerebras',
+        'nvidia': 'nvidia',
+        'fireworks': 'fireworks',
+        'together': 'together',
+        'openrouter': 'openrouter',
+        'opencode': 'opencode', 'zen': 'opencode',
+        'perplexity': 'perplexity',
+        'ollama': 'ollama',
+      };
+      const resolvedId = providerAliases[explicitProvider] || explicitProvider;
+
+      // Ollama — keyless
+      if (resolvedId === 'ollama') {
+        return {
+          key: 'ollama',
+          model: modelPart,
+          driver: 'openai',
+          apiUrl: 'http://localhost:11434/v1/chat/completions',
+          id: 'ollama'
+        };
+      }
+
+      // OAuth providers
+      if (resolvedId === 'anthropic' && process.env.CREW_NO_OAUTH !== 'true') {
+        try {
+          const oauth = await getOAuthToken();
+          if (oauth?.accessToken) {
+            return { key: oauth.accessToken, model: modelPart, driver: 'anthropic', id: 'anthropic-oauth', isOAuth: true };
+          }
+        } catch {}
+      }
+      if (resolvedId === 'openai' && process.env.CREW_NO_OAUTH !== 'true') {
+        try {
+          const oauth = await getOpenAIOAuthToken();
+          if (oauth?.accessToken) {
+            return { key: oauth.accessToken, model: modelPart, driver: 'openai', apiUrl: OPENAI_CODEX_API_URL, id: 'openai-oauth', isOAuth: true };
+          }
+        } catch {}
+      }
+      if (resolvedId === 'gemini' && process.env.CREW_NO_OAUTH !== 'true') {
+        try {
+          const oauth = await getGeminiOAuthToken();
+          if (oauth?.accessToken) {
+            return { key: oauth.accessToken, model: modelPart, driver: 'gemini', id: 'gemini-oauth', isOAuth: true };
+          }
+        } catch {}
+      }
+
+      // API key providers
+      const p = PROVIDER_ORDER.find(p => p.id === resolvedId);
+      if (p) {
+        const key = process.env[p.envKey];
+        if (key && key.length >= 5) {
+          return { key, model: modelPart, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
+        }
+      }
+
+      console.warn(`[crew-cli] ⚠️ Provider "${explicitProvider}" specified but no API key found (${resolvedId})`);
+      // Don't fall through — explicit provider should fail, not silently use another
+      return null;
+    }
+  }
+
+  // ── OAuth: subscription-based auth (free, highest priority) ──
   // Try all OAuth providers before API keys. OAuth uses existing subscriptions (free).
 
   if (process.env.CREW_NO_OAUTH !== 'true') {
