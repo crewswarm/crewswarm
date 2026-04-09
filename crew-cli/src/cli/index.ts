@@ -2154,7 +2154,12 @@ export async function main(args = []) {
             response: responseText,
             edits,
             needsApproval: edits.length > 0,
-            capabilityHandshake
+            capabilityHandshake,
+            // Benchmark telemetry
+            totalCost: result.totalCost || 0,
+            turns: result.executionResults?.results?.reduce((s: number, r: Record<string, unknown>) => s + (Number(r.turns) || 0), 0) || 0,
+            toolsUsed: [...new Set((result.executionResults?.results || []).flatMap((r: Record<string, unknown>) => (r.toolsUsed as string[]) || []))],
+            modelUsed: result.executionResults?.results?.[0]?.modelUsed || null,
           });
           return;
         }

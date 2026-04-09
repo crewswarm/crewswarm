@@ -280,9 +280,17 @@ async function runTask(task, model, envOverrides = {}) {
 
   // Run the agent
   const start = Date.now();
+  // Force ALL pipeline layers to use the same model — true single-model benchmark
+  const benchModel = process.env.CREW_EXECUTION_MODEL || 'default';
   const env = {
     ...process.env,
-    CREW_NO_OAUTH: 'true',
+    CREW_NO_OAUTH: process.env.CREW_NO_OAUTH || 'true',
+    CREW_L1_MODEL: benchModel,
+    CREW_L3_MODEL: benchModel,
+    CREW_L3_REVIEW_MODEL: benchModel,
+    CREW_L3_FIXER_MODEL: benchModel,
+    CREW_QA_MODEL: benchModel,
+    CREW_ROUTER_MODEL: benchModel,
     ...envOverrides
   };
 
@@ -293,6 +301,31 @@ async function runTask(task, model, envOverrides = {}) {
       dir
     );
     const elapsed = Date.now() - start;
+
+    // Parse JSON envelope for telemetry (turns, cost, tools, decision)
+    let telemetry = {};
+    try {
+      // The envelope is pretty-printed JSON; find the opening brace and parse the whole object
+      const output = result.output || '';
+      const braceIdx = output.indexOf('{\n  "version"');
+      if (braceIdx >= 0) {
+        // Find matching closing brace
+        let depth = 0, end = braceIdx;
+        for (let i = braceIdx; i < output.length; i++) {
+          if (output[i] === '{') depth++;
+          else if (output[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+        }
+        const envelope = JSON.parse(output.slice(braceIdx, end));
+        telemetry = {
+          decision: envelope.decision || null,
+          totalCost: envelope.totalCost || 0,
+          turns: envelope.turns || 0,
+          toolsUsed: envelope.toolsUsed || [],
+          modelUsed: envelope.modelUsed || null,
+          executionPath: envelope.executionPath || [],
+        };
+      }
+    } catch {}
 
     // Ensure filesystem is synced before quality checks
     try { execSync('sync', { cwd: dir, stdio: 'ignore', timeout: 5000 }); } catch {}
@@ -329,7 +362,9 @@ async function runTask(task, model, envOverrides = {}) {
       diffDeletions: diff.deletions,
       diffFiles: diff.filesChanged,
       // Composite quality score (0-100)
-      qualityScore: computeQualityScore(task, tests, typecheck, diff, noRegression)
+      qualityScore: computeQualityScore(task, tests, typecheck, diff, noRegression),
+      // Telemetry from pipeline
+      ...telemetry
     };
 
     return score;
@@ -398,7 +433,12 @@ for (const task of tasksToRun) {
   console.log(`  Task: ${task.description.slice(0, 80)}...`);
   const score = await runTask(task, process.env.CREW_EXECUTION_MODEL || 'default');
   results.push(score);
-  console.log(`  Result: quality=${score.qualityScore}/100 tests=${score.testsPassed}/${score.testsTotal} typecheck=${score.typecheckPasses ? 'PASS' : 'FAIL'} regression=${score.noRegression ? 'NONE' : 'YES'} diff=+${score.diffInsertions}-${score.diffDeletions} (${Math.round(score.elapsed / 1000)}s)`);
+  const turnsStr = score.turns ? ` turns=${score.turns}` : '';
+  const costStr = score.totalCost ? ` cost=$${score.totalCost.toFixed(4)}` : '';
+  const toolsStr = score.toolsUsed?.length ? ` tools=${score.toolsUsed.join(',')}` : '';
+  const decisionStr = score.decision ? ` decision=${score.decision}` : '';
+  const modelStr = score.modelUsed ? ` model=${score.modelUsed}` : '';
+  console.log(`  Result: quality=${score.qualityScore}/100 tests=${score.testsPassed}/${score.testsTotal} typecheck=${score.typecheckPasses ? 'PASS' : 'FAIL'} regression=${score.noRegression ? 'NONE' : 'YES'} diff=+${score.diffInsertions}-${score.diffDeletions} (${Math.round(score.elapsed / 1000)}s)${turnsStr}${costStr}${decisionStr}${modelStr}${toolsStr}`);
   console.log('');
 }
 

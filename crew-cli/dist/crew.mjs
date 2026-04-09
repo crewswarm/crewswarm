@@ -28542,7 +28542,12 @@ Please review for correctness, regressions, and security concerns.`;
           response: responseText,
           edits,
           needsApproval: edits.length > 0,
-          capabilityHandshake
+          capabilityHandshake,
+          // Benchmark telemetry
+          totalCost: result2.totalCost || 0,
+          turns: result2.executionResults?.results?.reduce((s, r) => s + (Number(r.turns) || 0), 0) || 0,
+          toolsUsed: [...new Set((result2.executionResults?.results || []).flatMap((r) => r.toolsUsed || []))],
+          modelUsed: result2.executionResults?.results?.[0]?.modelUsed || null
         });
         return;
       }
