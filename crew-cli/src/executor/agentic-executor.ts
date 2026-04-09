@@ -509,6 +509,19 @@ const PROVIDER_ORDER: ProviderEntry[] = [
   { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'qwen3.6-plus-free', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'qwen3.6', tier: 'standard' },
   { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'trinity-large-preview-free', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'trinity', tier: 'standard' },
   { id: 'opencode', envKey: 'OPENCODE_API_KEY', model: 'big-pickle', driver: 'openai', apiUrl: 'https://opencode.ai/zen/v1/chat/completions', modelPrefix: 'big-pickle', tier: 'standard' },
+  // Ollama — local/cloud models via OpenAI-compatible API (keyless, always available)
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'gemma4:31b-cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'gemma', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'glm-5.1:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'glm-5.1', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'glm-5:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'glm-5:', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'glm-4.7:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'glm-4', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'minimax-m2.7:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'minimax', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'kimi-k2.5:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'kimi-k2', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'deepseek-v3.2:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'deepseek-v3', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'qwen3-coder-next:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'qwen3-coder', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'devstral-2:123b-cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'devstral', tier: 'standard' },
+  { id: 'ollama', envKey: 'OLLAMA_DUMMY', model: 'nemotron-3-super:cloud', driver: 'openai', apiUrl: 'http://localhost:11434/v1/chat/completions', modelPrefix: 'nemotron', tier: 'standard' },
+  // Perplexity
+  { id: 'perplexity', envKey: 'PERPLEXITY_API_KEY', model: 'sonar', driver: 'openai', apiUrl: 'https://api.perplexity.ai/chat/completions', modelPrefix: 'sonar', tier: 'standard' },
   // Fallback — free tier
   { id: 'openrouter', envKey: 'OPENROUTER_API_KEY', model: 'google/gemini-2.0-flash-exp:free', driver: 'openrouter', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', modelPrefix: 'openrouter', tier: 'standard' },
   // Additional providers (OpenAI-compatible, cheap workers)
@@ -652,11 +665,14 @@ async function resolveProvider(modelOverride?: string, preferTier?: string): Pro
     }
 
     for (const p of PROVIDER_ORDER) {
-      const key = process.env[p.envKey];
-      if (!key || key.length < 5) continue;
+      const isKeyless = p.id === 'ollama'; // Ollama runs locally, no API key needed
+      const key = isKeyless ? 'ollama' : process.env[p.envKey];
+      if (!isKeyless && (!key || key.length < 5)) continue;
       if (p.envKey === 'GOOGLE_API_KEY' && process.env.GEMINI_API_KEY) continue;
       if (p.modelPrefix && effectiveModel.includes(p.modelPrefix)) {
-        return { key, model: modelOverride || process.env.CREW_EXECUTION_MODEL || p.model, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
+        // Ollama cloud models have ":cloud" suffix — don't match them against non-Ollama providers
+        if (p.id !== 'ollama' && effectiveModel.includes(':cloud')) continue;
+        return { key: key || 'ollama', model: modelOverride || process.env.CREW_EXECUTION_MODEL || p.model, driver: p.driver, apiUrl: p.apiUrl, id: p.id };
       }
     }
 
