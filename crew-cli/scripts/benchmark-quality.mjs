@@ -210,9 +210,15 @@ const TASKS = [
 // Quality checks
 // ---------------------------------------------------------------------------
 
-function runCommand(cmd, cwd) {
+function runCommand(cmd, cwd, envOverrides = {}) {
   try {
-    const output = execSync(cmd, { cwd, stdio: 'pipe', encoding: 'utf8', timeout: 300000 });
+    const output = execSync(cmd, {
+      cwd,
+      stdio: 'pipe',
+      encoding: 'utf8',
+      timeout: 300000,
+      env: { ...process.env, ...envOverrides }
+    });
     return { ok: true, output: output.trim(), exitCode: 0 };
   } catch (err) {
     return {
@@ -238,8 +244,12 @@ function checkTests(dir, verifyCmd) {
 }
 
 function checkDiffSize(dir) {
-  // Exclude .crew/ metadata from diff — only count real source changes
-  const diff = runCommand('git diff --stat HEAD -- . ":(exclude).crew"', dir);
+  // Diff against the initial fixture commit (first commit), not HEAD.
+  // The pipeline may auto-commit changes, making `git diff HEAD` empty.
+  // Use git log to find the initial commit and diff against that.
+  const initialCommit = runCommand('git rev-list --max-parents=0 HEAD', dir);
+  const baseRef = initialCommit.ok && initialCommit.output.trim() ? initialCommit.output.trim() : 'HEAD';
+  const diff = runCommand(`git diff --stat ${baseRef} -- . ":(exclude).crew"`, dir);
   const lines = diff.output.split('\n').filter(l => l.trim());
   const insertions = (diff.output.match(/(\d+) insertion/)?.[1] || '0');
   const deletions = (diff.output.match(/(\d+) deletion/)?.[1] || '0');
@@ -285,12 +295,18 @@ async function runTask(task, model, envOverrides = {}) {
   const env = {
     ...process.env,
     CREW_NO_OAUTH: process.env.CREW_NO_OAUTH || 'true',
+    CREW_AUTO_CHECKPOINT: 'false',
     CREW_L1_MODEL: benchModel,
+    CREW_CHAT_MODEL: benchModel,
+    CREW_REASONING_MODEL: benchModel,
     CREW_L3_MODEL: benchModel,
     CREW_L3_REVIEW_MODEL: benchModel,
     CREW_L3_FIXER_MODEL: benchModel,
     CREW_QA_MODEL: benchModel,
     CREW_ROUTER_MODEL: benchModel,
+    CREW_L2A_MODEL: benchModel,
+    CREW_L2B_MODEL: benchModel,
+    CREW_L2_EXTRA_VALIDATORS: benchModel,
     ...envOverrides
   };
 
@@ -298,7 +314,8 @@ async function runTask(task, model, envOverrides = {}) {
     const crewCli = resolve(process.cwd(), 'dist', 'crew.mjs');
     const result = runCommand(
       `node ${crewCli} run -t ${JSON.stringify(task.description)} --json`,
-      dir
+      dir,
+      env
     );
     const elapsed = Date.now() - start;
 
