@@ -36,7 +36,7 @@ async function seedFixture(dir) {
     scripts: {
       test: 'node --experimental-strip-types test/math.test.ts',
       build: 'node --experimental-strip-types --check src/math.ts src/utils.ts',
-      'test:all': 'node --experimental-strip-types test/math.test.ts && node --experimental-strip-types test/utils.test.ts'
+      'test:all': 'node --experimental-strip-types test/math.test.ts; node --experimental-strip-types test/utils.test.ts'
     }
   }, null, 2));
 
