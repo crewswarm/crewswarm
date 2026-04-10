@@ -473,7 +473,24 @@ console.log(`Average quality score: ${avgScore.toFixed(0)}/100`);
 console.log(`All tests pass: ${allPass}`);
 console.log(`Tasks: ${results.filter(r => r.qualityScore >= 80).length}/${results.length} high quality (80+)`);
 
+// Always save to per-model log file
+const modelSlug = (process.env.CREW_EXECUTION_MODEL || 'default').replace(/[/:]/g, '-').replace(/^-+|-+$/g, '');
+const resultsDir = join(process.cwd(), 'benchmarks', 'results');
+await mkdir(resultsDir, { recursive: true });
+const autoFile = join(resultsDir, `${modelSlug}.json`);
+const payload = {
+  ts: new Date().toISOString(),
+  model: process.env.CREW_EXECUTION_MODEL || 'default',
+  avgScore,
+  allPass,
+  highQuality: results.filter(r => r.qualityScore >= 80).length,
+  totalTasks: results.length,
+  results
+};
+await writeFile(autoFile, JSON.stringify(payload, null, 2));
+console.log(`\nSaved: ${autoFile}`);
+
 if (outFile) {
-  await writeFile(outFile, JSON.stringify({ ts: new Date().toISOString(), results, avgScore }, null, 2));
-  console.log(`\nSaved: ${outFile}`);
+  await writeFile(outFile, JSON.stringify(payload, null, 2));
+  console.log(`Also saved: ${outFile}`);
 }
