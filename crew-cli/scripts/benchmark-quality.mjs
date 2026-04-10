@@ -216,7 +216,7 @@ function runCommand(cmd, cwd, envOverrides = {}) {
       cwd,
       stdio: 'pipe',
       encoding: 'utf8',
-      timeout: 300000,
+      timeout: Number(process.env.CREW_BENCHMARK_TIMEOUT || 600) * 1000,
       env: { ...process.env, ...envOverrides }
     });
     return { ok: true, output: output.trim(), exitCode: 0 };
