@@ -175,7 +175,7 @@ const TASKS = [
     id: 'refactor-rename-clamp',
     description: 'Rename the clamp function in src/utils.ts to clampValue. Update the export and update test/utils.test.ts to use the new name. All tests must still pass.',
     verify: 'node --experimental-strip-types test/utils.test.ts',
-    expectPass: 7,
+    expectPass: 6,  // 6/7 in baseline (slugify hyphen-collapse bug is pre-existing, not part of this task)
     expectFiles: ['src/utils.ts', 'test/utils.test.ts'],
     difficulty: 'medium'
   },
@@ -408,8 +408,14 @@ function computeQualityScore(task, tests, typecheck, diff, noRegression) {
   let score = 0;
 
   // Tests pass (50 points max)
+  // Use expectPass as denominator — some fixtures have intentionally failing tests
+  // (e.g. divide-by-zero test fails until that bug is fixed, but feature-modulo task
+  // only asks to add modulo, not fix divide). Model shouldn't be penalized for
+  // pre-existing failures it wasn't asked to fix.
   if (tests.total > 0) {
-    score += Math.round((tests.passes / Math.max(tests.total, task.expectPass || 1)) * 50);
+    const target = task.expectPass || tests.total;
+    const passRatio = Math.min(1, tests.passes / target);
+    score += Math.round(passRatio * 50);
   }
 
   // Typecheck passes (20 points)
