@@ -424,11 +424,17 @@ function computeQualityScore(task, tests, typecheck, diff, noRegression) {
   // No regressions (15 points)
   if (noRegression.ok) score += 15;
 
-  // Diff efficiency (15 points) — smaller is better
+  // Diff efficiency (15 points) — scaled by task difficulty
   const totalChanges = diff.insertions + diff.deletions;
-  if (totalChanges <= 5) score += 15;
-  else if (totalChanges <= 15) score += 10;
-  else if (totalChanges <= 30) score += 5;
+  const diffThresholds = {
+    easy:   { full: 5,  mid: 15, low: 30 },
+    medium: { full: 15, mid: 25, low: 50 },
+    hard:   { full: 30, mid: 60, low: 100 }
+  };
+  const t = diffThresholds[task.difficulty] || diffThresholds.medium;
+  if (totalChanges <= t.full) score += 15;
+  else if (totalChanges <= t.mid) score += 10;
+  else if (totalChanges <= t.low) score += 5;
 
   return Math.min(100, score);
 }
