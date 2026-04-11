@@ -52,33 +52,19 @@ crew-cli is the built-in execution engine. It runs standalone or as one of crews
 
 Three API formats, one engine. Bring your own keys, use OAuth from Claude Code / Codex / Gemini CLI, or run free models via Groq / Ollama / OpenRouter.
 
-### Benchmark: 29 models at 100/100 quality
+### Benchmark: free models match Claude Opus
 
-All models produce correct, compilable TypeScript that passes tests. Sorted by cost:
+Single-model pipeline testing — same model handles routing, planning, execution, review, and fixing. All tests pass on 6 TypeScript coding tasks (bugfix, feature, refactor, multi-file).
 
-| Model | Provider | Quality | Time | Input $/1M | Output $/1M | ~Cost/Task |
-|---|---|---|---|---|---|---|
-| Qwen3 Next 80B | OpenRouter | 100 | — | FREE | FREE | $0 |
-| MiniMax M2.5 | OpenRouter | 100 | — | FREE | FREE | $0 |
-| Llama 3.3 70B | OpenRouter | 100 | — | FREE | FREE | $0 |
-| Claude (OAuth) | Anthropic | 100 | 25-69s | FREE | FREE | $0 |
-| GPT-5.4 (OAuth) | OpenAI | 100 | 14s | FREE | FREE | $0 |
-| GPT-OSS 20B | Groq | 100 | 12s | $0.08 | $0.30 | $0.0003 |
-| Gemini 2.5 Flash Lite | Google | 100 | 11s | $0.10 | $0.40 | $0.0004 |
-| DeepSeek Chat | DeepSeek | 100 | 26s | $0.28 | $0.42 | $0.001 |
-| Grok 4-1 Fast | xAI | 100 | 75s | $0.20 | $0.50 | $0.001 |
-| Gemini 2.5 Flash | Google | 100 | 11s | $0.30 | $2.50 | $0.002 |
-| Groq Llama 3.3 70B | Groq | 100 | 12s | $0.59 | $0.79 | $0.002 |
-| Cerebras Qwen3-235B | Cerebras | 100 | 2s | $0.60 | $1.20 | $0.002 |
-| GLM-5 | OpenCode/Zen | 100 | 15s | $0.72 | $2.30 | $0.003 |
-| Kimi K2.5 | OpenRouter | 100 | 16s | $0.38 | $1.72 | $0.002 |
-| MiniMax M2.1 | OpenRouter | 100 | 12s | $0.27 | $0.95 | $0.001 |
-| GPT-5.4 | OpenAI | 100 | 14s | $2.50 | $15.00 | $0.02 |
-| Claude Haiku 4.5 | Anthropic | 100 | 25s | $1.00 | $5.00 | $0.007 |
-| Claude Sonnet 4.6 | Anthropic | 100 | 69s | $3.00 | $15.00 | $0.02 |
-| Claude Opus 4.6 | Anthropic | 100 | 29s | $5.00 | $25.00 | $0.03 |
+| Model | Provider | Result | ~Cost/Task |
+|---|---|---|---|
+| Qwen 3.5 (397B) | Ollama cloud | **All tests pass** | FREE |
+| GLM-5.1 | Ollama cloud | **All tests pass** | FREE |
+| Claude Sonnet 4.6 | Anthropic OAuth | **All tests pass** | ~$0.06 |
+| Claude Opus 4.6 | Anthropic OAuth | **All tests pass** | ~$0.07 |
+| GPT-5.4 | OpenAI OAuth | **All tests pass** | ~$0.13 |
 
-OAuth models (Claude, GPT-5.4) are free with existing subscriptions. Cheapest paid: $0.0003/task (Groq GPT-OSS 20B).
+Two free local models (Qwen 3.5, GLM-5.1 via Ollama) pass every test that Claude Opus does. [Full results &rarr;](https://crewswarm.ai/benchmarks.html)
 
 **What makes crew-cli different from other AI coding CLIs:**
 - **Failure memory** — blocks repeated bad moves, forces new approaches
