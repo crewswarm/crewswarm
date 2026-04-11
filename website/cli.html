@@ -6,15 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://cdn.simpleicons.org" crossorigin />
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
-  <title>crew-cli — AI Coding Engine | 29 Models, 16 Providers, 100/100 Quality | crewswarm</title>
+  <title>crew-cli — AI Coding Engine | 16+ Providers, Free Models Match Opus | crewswarm</title>
   <meta name="description"
-    content="crew-cli is an AI coding execution engine with 29 models at 100/100 quality across 16 providers. Failure memory, verification-first, patch critic, tool auto-filtering. From $0.0003/task to free with OAuth." />
+    content="crew-cli is an AI coding execution engine tested across 16+ providers. 5 models pass all tests including 2 free local models. Failure memory, verification-first, patch critic, tool auto-filtering. From $0.0003/task to free with OAuth." />
   <meta name="keywords"
-    content="crew-cli, AI coding engine, 29 models benchmark, multi-provider, Claude GPT Gemini Grok DeepSeek, tool calling, agentic coding, L2 planner, parallel execution, failure memory, verification-first" />
+    content="crew-cli, AI coding engine, multi-provider benchmark, Claude GPT Gemini Grok DeepSeek, tool calling, agentic coding, L2 planner, parallel execution, failure memory, verification-first" />
   <!-- Open Graph -->
-  <meta property="og:title" content="crew-cli — AI Coding Engine | 29 Models, 16 Providers, 100/100 Quality" />
+  <meta property="og:title" content="crew-cli — AI Coding Engine | 16+ Providers, Free Models Match Opus" />
   <meta property="og:description"
-    content="29 models benchmarked at 100/100 quality. 14 models at 90/100 on task planning. From $0.0003/task. Failure memory, verification-first, patch critic. Works with any LLM." />
+    content="5 models pass all tests (including 2 free local models). Tested across 16+ providers. From $0.0003/task. Failure memory, verification-first, patch critic. Works with any LLM." />
   <meta property="og:url" content="https://crewswarm.ai/cli.html" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -63,8 +63,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "crew-cli — AI Coding Engine | 29 Models, 16 Providers",
-    "description": "AI coding execution engine with 29 models at 100/100 quality across 16 providers. Failure memory, verification-first, patch critic. From $0.0003/task.",
+    "name": "crew-cli — AI Coding Engine | 16+ Providers, Free Models Match Opus",
+    "description": "AI coding execution engine tested across 16+ providers. 5 models pass all tests including 2 free local models. Failure memory, verification-first, patch critic. From $0.0003/task.",
     "url": "https://crewswarm.ai/cli.html",
     "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" },
     "about": {
@@ -483,40 +483,26 @@
       </div>
 
       <div style="background: var(--bg-card2, #111827); border-radius: 12px; padding: 2rem; margin-top: 2rem;">
-        <h3 style="margin-top:0;">29 models at 100/100</h3>
-        <p>Every model below scores perfect on our quality benchmark: correct TypeScript, all tests passing, typecheck clean, no regressions. The engine makes $0.0003/task models produce the same quality as $0.03/task models.</p>
+        <h3 style="margin-top:0;">5 models pass all tests</h3>
+        <p>These models pass our full quality benchmark solo: correct TypeScript, all tests passing, typecheck clean, no regressions. Includes 2 free local models via Ollama.</p>
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse: collapse; font-size: 0.85rem;">
             <thead>
               <tr style="border-bottom: 2px solid var(--border, #ddd);">
                 <th style="text-align:left; padding: 0.5rem;">Model</th>
                 <th style="text-align:center; padding: 0.5rem;">Provider</th>
-                <th style="text-align:right; padding: 0.5rem;">Input $/1M</th>
-                <th style="text-align:right; padding: 0.5rem;">Output $/1M</th>
-                <th style="text-align:center; padding: 0.5rem;">Speed</th>
                 <th style="text-align:right; padding: 0.5rem;">~Cost/Task</th>
+                <th style="text-align:center; padding: 0.5rem;">Result</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td style="padding:0.35rem;">Claude (OAuth)</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">FREE</td><td style="text-align:right;">FREE</td><td style="text-align:center;">25-69s</td><td style="text-align:right;color:#22c55e;">$0</td></tr>
-              <tr><td style="padding:0.35rem;">GPT-5.4 (OAuth)</td><td style="text-align:center;">OpenAI</td><td style="text-align:right;">FREE</td><td style="text-align:right;">FREE</td><td style="text-align:center;">14s</td><td style="text-align:right;color:#22c55e;">$0</td></tr>
-              <tr><td style="padding:0.35rem;">GPT-OSS 20B</td><td style="text-align:center;">Groq</td><td style="text-align:right;">$0.08</td><td style="text-align:right;">$0.30</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.0003</td></tr>
-              <tr><td style="padding:0.35rem;">Gemini 2.5 Flash Lite</td><td style="text-align:center;">Google</td><td style="text-align:right;">$0.10</td><td style="text-align:right;">$0.40</td><td style="text-align:center;">11s</td><td style="text-align:right;">$0.0004</td></tr>
-              <tr><td style="padding:0.35rem;">DeepSeek Chat</td><td style="text-align:center;">DeepSeek</td><td style="text-align:right;">$0.28</td><td style="text-align:right;">$0.42</td><td style="text-align:center;">26s</td><td style="text-align:right;">$0.001</td></tr>
-              <tr><td style="padding:0.35rem;">Grok 4-1 Fast</td><td style="text-align:center;">xAI</td><td style="text-align:right;">$0.20</td><td style="text-align:right;">$0.50</td><td style="text-align:center;">75s</td><td style="text-align:right;">$0.001</td></tr>
-              <tr><td style="padding:0.35rem;">MiniMax M2.1</td><td style="text-align:center;">OpenRouter</td><td style="text-align:right;">$0.27</td><td style="text-align:right;">$0.95</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.001</td></tr>
-              <tr><td style="padding:0.35rem;">Gemini 2.5 Flash</td><td style="text-align:center;">Google</td><td style="text-align:right;">$0.30</td><td style="text-align:right;">$2.50</td><td style="text-align:center;">11s</td><td style="text-align:right;">$0.002</td></tr>
-              <tr><td style="padding:0.35rem;">Kimi K2.5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:right;">$0.38</td><td style="text-align:right;">$1.72</td><td style="text-align:center;">16s</td><td style="text-align:right;">$0.002</td></tr>
-              <tr><td style="padding:0.35rem;">Groq Llama 3.3 70B</td><td style="text-align:center;">Groq</td><td style="text-align:right;">$0.59</td><td style="text-align:right;">$0.79</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.002</td></tr>
-              <tr><td style="padding:0.35rem;">Cerebras Qwen3-235B</td><td style="text-align:center;">Cerebras</td><td style="text-align:right;">$0.60</td><td style="text-align:right;">$1.20</td><td style="text-align:center;">2s</td><td style="text-align:right;">$0.002</td></tr>
-              <tr><td style="padding:0.35rem;">GLM-5</td><td style="text-align:center;">OpenCode/Zen</td><td style="text-align:right;">$0.72</td><td style="text-align:right;">$2.30</td><td style="text-align:center;">15s</td><td style="text-align:right;">$0.003</td></tr>
-              <tr><td style="padding:0.35rem;">Claude Haiku 4.5</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$1.00</td><td style="text-align:right;">$5.00</td><td style="text-align:center;">25s</td><td style="text-align:right;">$0.007</td></tr>
-              <tr><td style="padding:0.35rem;">GPT-5.4</td><td style="text-align:center;">OpenAI</td><td style="text-align:right;">$2.50</td><td style="text-align:right;">$15.00</td><td style="text-align:center;">14s</td><td style="text-align:right;">$0.02</td></tr>
-              <tr><td style="padding:0.35rem;">Claude Sonnet 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$3.00</td><td style="text-align:right;">$15.00</td><td style="text-align:center;">69s</td><td style="text-align:right;">$0.02</td></tr>
-              <tr><td style="padding:0.35rem;">Claude Opus 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$5.00</td><td style="text-align:right;">$25.00</td><td style="text-align:center;">29s</td><td style="text-align:right;">$0.03</td></tr>
+              <tr><td style="padding:0.35rem;">Claude Opus 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">~$0.07</td><td style="text-align:center;color:#22c55e;">All tests pass</td></tr>
+              <tr><td style="padding:0.35rem;">Qwen 3.5 (397B)</td><td style="text-align:center;">Ollama cloud</td><td style="text-align:right;color:#22c55e;">FREE</td><td style="text-align:center;color:#22c55e;">All tests pass</td></tr>
+              <tr><td style="padding:0.35rem;">GPT-5.4</td><td style="text-align:center;">OpenAI</td><td style="text-align:right;">~$0.13</td><td style="text-align:center;color:#22c55e;">All tests pass</td></tr>
+              <tr><td style="padding:0.35rem;">Claude Sonnet 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">~$0.06</td><td style="text-align:center;color:#22c55e;">All tests pass</td></tr>
+              <tr><td style="padding:0.35rem;">GLM-5.1</td><td style="text-align:center;">Ollama cloud</td><td style="text-align:right;color:#22c55e;">FREE</td><td style="text-align:center;color:#22c55e;">All tests pass</td></tr>
             </tbody>
           </table>
-          <p style="font-size:0.8rem;color:var(--text-secondary,#666);margin-top:0.75rem;">+ 13 more models at 100/100: GPT-5.4 Mini/Nano, GPT-5/5.2, GLM-4.6/4.7, MiniMax M2.5, Kimi K2, Grok 3 Mini, Grok Code Fast, Big Pickle, DeepSeek Reasoner, Qwen3-32B. Full list in README.</p>
         <h4 style="margin-top:2rem;">L2 Planner: 14 models at 90/100</h4>
         <p style="font-size:0.85rem;">Task decomposition quality — correct dependency chains, diverse persona assignments, acceptance criteria, verification checks. Cheap models match expensive ones because the prompt engineering does the work.</p>
         <div style="overflow-x:auto; margin-top:1rem;">

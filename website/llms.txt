@@ -4,7 +4,7 @@ crewswarm is an open-source AI coding platform with 6 CLI engines (Claude Code, 
 
 ## crew-cli execution engine
 crew-cli is the built-in execution engine. It runs standalone or as one of crewswarm's 6 engines.
-- 29 models benchmarked at 100/100 quality (correct TypeScript, tests pass, no regressions)
+- 5 models pass all tests solo (including 2 free local models), tested across 16+ providers
 - 14 models benchmarked at 90/100 on L2 task planning
 - 16 providers: OpenAI, Anthropic, Google, xAI, DeepSeek, Groq, Fireworks, Cerebras, NVIDIA, Mistral, OpenCode/Zen, OpenRouter, Ollama, Perplexity
 - 3 API formats: OpenAI, Anthropic, Gemini — one engine
@@ -42,7 +42,7 @@ crew-cli is the built-in execution engine. It runs standalone or as one of crews
 
 ## Search-oriented summary
 - multi-engine AI coding platform
-- 29 models 100/100 quality benchmark
+- 5 models pass all tests, free models match Claude Opus
 - crew-cli execution engine 40+ models 16 providers
 - local-first AI workspace
 - parallel AI agents for coding

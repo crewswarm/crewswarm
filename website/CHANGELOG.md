@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Execution quality engine** (8 modules): RunState lifecycle, RunEngine with failure-avoidance, StructuredHistory for full-fidelity state, PatchCritic for per-turn edit quality, DelegationTuner for persona/model routing, ToolFilter for task-based tool pruning, TopOfMind persistent instructions, ChatRecall + Summon for runtime specialization
-- **29 models at 100/100** quality benchmark — from free (Groq Llama 70B, OAuth Claude/GPT) to $0.03/task (Claude Opus)
+- **29 models at 100/100** quality benchmark — from free (Groq Llama 70B, OAuth Claude/GPT) to $0.03/task (Claude Opus) (updated: single-model testing shows 5 models pass all tests solo)
 - **L2 planner benchmark**: 14 models at 90/100 task decomposition quality
 - **DESIGN.md artifact**: L2 planner now generates design system docs alongside PDD, ROADMAP, ARCH
 - **Tool auto-filter**: reduces tool count per task based on detected domains (coding, git, web, etc.)
@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Execution Quality Engine section** on website index.html and cli.html
-- **Benchmark callout**: 18 models at 100/100 (later expanded to 29)
+- **Benchmark callout**: 18 models at 100/100 (later expanded to 29) (updated: single-model testing shows 5 models pass all tests solo)
 - **OpenCode/Zen provider**: 7 model prefixes, 39 models + free tier
 - **Hard tier benchmark**: multi-file coding tasks
 - **CREW_PROVIDER env var**: explicit provider routing for `/model` command
