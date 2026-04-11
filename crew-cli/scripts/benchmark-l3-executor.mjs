@@ -222,11 +222,14 @@ function checkUtilsUnbroken(dir) {
   return { name: 'no-regression', ok: result.ok, passes };
 }
 
-function computeQualityScore(task, tests, typecheck, diff, noRegression) {
+function computeQualityScore(task, tests, typecheck, diff, noRegression, baselineTests = null) {
   let score = 0;
   if (tests.total > 0) {
     const target = task.expectPass || tests.total;
-    const passRatio = Math.min(1, tests.passes / target);
+    const baselinePasses = baselineTests?.passes || 0;
+    const newPasses = Math.max(0, tests.passes - baselinePasses);
+    const neededPasses = Math.max(1, target - baselinePasses);
+    const passRatio = Math.min(1, newPasses / neededPasses);
     score += Math.round(passRatio * 50);
   }
   if (typecheck.ok) score += 20;
@@ -252,6 +255,7 @@ async function runTask(task, model) {
   const dir = await mkdtemp(join(tmpdir(), `crew-l3-${task.id}-`));
   await seedFixture(dir);
   const baselineRegression = checkUtilsUnbroken(dir);
+  const baselineTests = checkTests(dir, task.verify);
 
   const start = Date.now();
   try {
@@ -294,7 +298,7 @@ async function runTask(task, model) {
       diffInsertions: diff.insertions,
       diffDeletions: diff.deletions,
       diffFiles: diff.filesChanged,
-      qualityScore: computeQualityScore(task, tests, typecheck, diff, noRegression),
+      qualityScore: computeQualityScore(task, tests, typecheck, diff, noRegression, baselineTests),
       turns: result.turns || 0,
       toolsUsed: result.toolsUsed || [],
       cost: result.cost || 0,

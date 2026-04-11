@@ -280,12 +280,10 @@ async function runTask(task, model, envOverrides = {}) {
   // Capture baseline regression state BEFORE agent runs
   const baselineRegression = checkUtilsUnbroken(dir);
 
-  // Verify fixture: tests should fail before fix (for bugfix tasks)
-  if (task.id.startsWith('bugfix')) {
-    const before = checkTests(dir, task.verify);
-    if (before.ok) {
-      console.log(`  [pre-check] Tests already pass — fixture may be wrong`);
-    }
+  // Capture baseline test state BEFORE agent runs — to detect "did nothing" models
+  const baselineTests = checkTests(dir, task.verify);
+  if (baselineTests.ok) {
+    console.log(`  [pre-check] Tests already pass — fixture may be wrong`);
   }
 
   // Run the agent
@@ -379,7 +377,7 @@ async function runTask(task, model, envOverrides = {}) {
       diffDeletions: diff.deletions,
       diffFiles: diff.filesChanged,
       // Composite quality score (0-100)
-      qualityScore: computeQualityScore(task, tests, typecheck, diff, noRegression),
+      qualityScore: computeQualityScore(task, tests, typecheck, diff, noRegression, baselineTests),
       // Telemetry from pipeline
       ...telemetry
     };
@@ -404,17 +402,18 @@ async function runTask(task, model, envOverrides = {}) {
   }
 }
 
-function computeQualityScore(task, tests, typecheck, diff, noRegression) {
+function computeQualityScore(task, tests, typecheck, diff, noRegression, baselineTests = null) {
   let score = 0;
 
   // Tests pass (50 points max)
-  // Use expectPass as denominator — some fixtures have intentionally failing tests
-  // (e.g. divide-by-zero test fails until that bug is fixed, but feature-modulo task
-  // only asks to add modulo, not fix divide). Model shouldn't be penalized for
-  // pre-existing failures it wasn't asked to fix.
+  // Only count tests that IMPROVED over baseline — a model that does nothing
+  // shouldn't get credit for tests that already passed in the fixture.
   if (tests.total > 0) {
     const target = task.expectPass || tests.total;
-    const passRatio = Math.min(1, tests.passes / target);
+    const baselinePasses = baselineTests?.passes || 0;
+    const newPasses = Math.max(0, tests.passes - baselinePasses);
+    const neededPasses = Math.max(1, target - baselinePasses);
+    const passRatio = Math.min(1, newPasses / neededPasses);
     score += Math.round(passRatio * 50);
   }
 
