@@ -227,10 +227,19 @@ function computeQualityScore(task, tests, typecheck, diff, noRegression, baselin
   if (tests.total > 0) {
     const target = task.expectPass || tests.total;
     const baselinePasses = baselineTests?.passes || 0;
-    const newPasses = Math.max(0, tests.passes - baselinePasses);
-    const neededPasses = Math.max(1, target - baselinePasses);
-    const passRatio = Math.min(1, newPasses / neededPasses);
-    score += Math.round(passRatio * 50);
+    const hasDiff = (diff.insertions + diff.deletions) > 0;
+
+    if (!hasDiff) {
+      score += 0;
+    } else if (target > baselinePasses) {
+      const newPasses = Math.max(0, tests.passes - baselinePasses);
+      const neededPasses = target - baselinePasses;
+      const passRatio = Math.min(1, newPasses / neededPasses);
+      score += Math.round(passRatio * 50);
+    } else {
+      const passRatio = Math.min(1, tests.passes / target);
+      score += Math.round(passRatio * 50);
+    }
   }
   if (typecheck.ok) score += 20;
   if (noRegression.ok) score += 15;

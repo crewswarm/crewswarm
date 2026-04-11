@@ -406,15 +406,28 @@ function computeQualityScore(task, tests, typecheck, diff, noRegression, baselin
   let score = 0;
 
   // Tests pass (50 points max)
-  // Only count tests that IMPROVED over baseline — a model that does nothing
-  // shouldn't get credit for tests that already passed in the fixture.
+  // For bugfix tasks: only count tests that IMPROVED over baseline.
+  // For refactor/feature tasks: count all passes against target (model must maintain passes).
+  // A model that does nothing (diff=0) gets 0 regardless.
   if (tests.total > 0) {
     const target = task.expectPass || tests.total;
     const baselinePasses = baselineTests?.passes || 0;
-    const newPasses = Math.max(0, tests.passes - baselinePasses);
-    const neededPasses = Math.max(1, target - baselinePasses);
-    const passRatio = Math.min(1, newPasses / neededPasses);
-    score += Math.round(passRatio * 50);
+    const hasDiff = (diff.insertions + diff.deletions) > 0;
+
+    if (!hasDiff) {
+      // No file changes = model did nothing = 0 test points
+      score += 0;
+    } else if (target > baselinePasses) {
+      // Bugfix/feature: need to improve over baseline
+      const newPasses = Math.max(0, tests.passes - baselinePasses);
+      const neededPasses = target - baselinePasses;
+      const passRatio = Math.min(1, newPasses / neededPasses);
+      score += Math.round(passRatio * 50);
+    } else {
+      // Refactor: target <= baseline, success = maintaining passes
+      const passRatio = Math.min(1, tests.passes / target);
+      score += Math.round(passRatio * 50);
+    }
   }
 
   // Typecheck passes (20 points)
