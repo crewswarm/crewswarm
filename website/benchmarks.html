@@ -6,15 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://cdn.simpleicons.org" crossorigin />
   <link rel="preconnect" href="https://www.googletagmanager.com" crossorigin />
-  <title>crewswarm Benchmarks — 29 Models at 100/100 Quality, Full Results</title>
+  <title>crewswarm Benchmarks — Free Models Match Claude Opus, Honest Results</title>
   <meta name="description"
-    content="Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks, 14 models at 90/100 on L2 planning. Methodology, results, and how to reproduce." />
+    content="Honest single-model benchmark results for crewswarm. Free local models pass every test. Gemini is a great coder but bad planner. 14 models at 90/100 on L2 planning. Methodology, results, and how to reproduce." />
   <meta name="keywords"
-    content="crewswarm benchmarks, AI coding benchmark, crew-cli quality, 29 models 100/100, L2 planner, TypeScript benchmark, model comparison, LLM coding test" />
+    content="crewswarm benchmarks, AI coding benchmark, crew-cli quality, free AI models, L2 planner, TypeScript benchmark, model comparison, LLM coding test, Qwen, GLM, Ollama" />
   <!-- Open Graph -->
-  <meta property="og:title" content="crewswarm Benchmarks — 29 Models at 100/100 Quality, Full Results" />
+  <meta property="og:title" content="crewswarm Benchmarks — Free Models Match Claude Opus, Honest Results" />
   <meta property="og:description"
-    content="Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks, 14 models at 90/100 on L2 planning. Methodology, results, and how to reproduce." />
+    content="Honest single-model benchmark results for crewswarm. Free local models pass every test. Gemini is a great coder but bad planner. 14 models at 90/100 on L2 planning. Methodology, results, and how to reproduce." />
   <meta property="og:url" content="https://crewswarm.ai/benchmarks.html" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://crewswarm.ai/og-image.png" />
@@ -26,9 +26,9 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@crewswarm" />
-  <meta name="twitter:title" content="crewswarm Benchmarks — 29 Models at 100/100 Quality" />
+  <meta name="twitter:title" content="crewswarm Benchmarks — Free Models Match Claude Opus" />
   <meta name="twitter:description"
-    content="Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks. Methodology, results, and how to reproduce." />
+    content="Honest single-model benchmarks. Free local models pass every test. Gemini scores 98 as executor but 78 in full pipeline. Methodology, results, and how to reproduce." />
   <meta name="twitter:image" content="https://crewswarm.ai/og-image.png" />
   <!-- SEO -->
   <meta name="robots" content="index, follow" />
@@ -63,8 +63,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": "crewswarm Benchmarks — 29 Models at 100/100 Quality",
-    "description": "Full benchmark results for crew-cli execution quality engine. 29 models at 100/100 on scoped coding tasks, 14 models at 90/100 on L2 planning.",
+    "name": "crewswarm Benchmarks — Free Models Match Claude Opus",
+    "description": "Honest single-model benchmark results. Free local models pass every test. Gemini is a great coder but bad planner. 14 models at 90/100 on L2 planning.",
     "url": "https://crewswarm.ai/benchmarks.html",
     "isPartOf": { "@type": "WebSite", "name": "crewswarm", "url": "https://crewswarm.ai/" },
     "about": {
@@ -138,11 +138,11 @@
   <section class="hero">
     <div class="hero-glow"></div>
     <div class="hero-badge">Benchmark Results</div>
-    <h1 class="gradient-text">29 models. 100/100 quality. Reproducible.</h1>
+    <h1 class="gradient-text">Free models match Claude Opus. Honestly.</h1>
     <p class="hero-sub" style="max-width: 54rem;">
-      Every model below produces correct, tested TypeScript on scoped coding tasks.
-      The execution quality engine is the equalizer &mdash; cheap models match expensive ones
-      because the runtime prevents failure modes, not the model.
+      Single-model benchmarks where the same model runs every pipeline layer.
+      No cherry-picking, no mixing strong planners with cheap executors.
+      Two free models running locally via Ollama pass every test.
     </p>
   </section>
 
@@ -152,46 +152,42 @@
       <div class="section-header">
         <div class="eyebrow">Methodology</div>
         <h2>How we test</h2>
-        <p class="section-desc">The quality benchmark runs 7 scoped TypeScript tasks against each model. Every task is deterministic and reproducible.</p>
+        <p class="section-desc">The benchmark runs 6 scoped TypeScript tasks through the full pipeline (L1 router, L2 planner, L3 executor) using a single model for all layers. Every task is deterministic and reproducible.</p>
       </div>
 
       <div class="grid-2" style="margin-top: 2rem; gap: 1rem;">
         <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 1</h3>
-          <p>Create a README with specific content structure and sections.</p>
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 1 &mdash; Easy</h3>
+          <p>Bugfix: fix a divide-by-zero error in existing code.</p>
         </div>
         <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 2</h3>
-          <p>Create a typed <code>add</code> function with a summary documentation file.</p>
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 2 &mdash; Medium</h3>
+          <p>Feature: add a modulo operation and write a test for it.</p>
         </div>
         <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 3</h3>
-          <p>Create utils with 3 functions plus tests, then run the tests to verify.</p>
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 3 &mdash; Medium</h3>
+          <p>Refactor: rename a function across all call sites and update tests.</p>
         </div>
         <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 4</h3>
-          <p>Fix a divide-by-zero bug, update the tests, then run to confirm the fix.</p>
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 4 &mdash; Hard</h3>
+          <p>Multi-file: create a calculator module with imports and full test coverage.</p>
         </div>
         <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 5</h3>
-          <p>Refactor: extract a function to its own file, update imports, verify the build.</p>
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 5 &mdash; Hard</h3>
+          <p>Extract: move a module to a new file, update all imports, verify the build.</p>
         </div>
         <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 6</h3>
-          <p>Fix a wrong test assertion, then run tests to verify correctness.</p>
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 6 &mdash; Hard</h3>
+          <p>Cross-file bugfix: fix 2 bugs across 2 different files simultaneously.</p>
         </div>
-        <div class="page-card">
-          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Task 7</h3>
-          <p>Create a calculator module importing math functions, with full test coverage.</p>
-        </div>
-        <div class="page-card">
+        <div class="page-card" style="grid-column: 1 / -1;">
           <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: var(--accent);">Scoring</h3>
-          <p>Each task is checked for correctness (file exists, content correct), <code>tsc --strict</code> passes, all tests pass, no regressions. 100 = all 7 pass.</p>
+          <p>Each task is checked for correctness (file exists, content correct), <code>tsc --strict</code> passes, all tests pass, no regressions. "Full pass" = all 6 pass. "Partial" = some tasks fail.</p>
         </div>
       </div>
 
       <div style="background: var(--bg-card2, #111827); border-radius: 12px; padding: 2rem; margin-top: 2rem;">
-        <p style="font-size: 0.9rem; color: var(--text-2); margin: 0;">These are scoped L3 execution tasks &mdash; the kind that run in parallel after the planner breaks work down. They test the engine's ability to make any model produce correct, verified code.</p>
+        <p style="font-size: 0.9rem; color: var(--text-2); margin: 0;"><strong>Honest methodology:</strong> each model runs solo on every pipeline layer (L1 routing, L2 planning, L3 execution). No mixing a strong planner with a cheap executor. If a model can't plan well, it fails the full pipeline even if it can code well. This is a harder test than isolated L3 benchmarks.</p>
       </div>
     </div>
   </section>
@@ -200,9 +196,9 @@
   <section class="section">
     <div class="container">
       <div class="section-header">
-        <div class="eyebrow">L3 Execution</div>
-        <h2>29 models at 100/100</h2>
-        <p class="section-desc">Every model below scores perfect on the quality benchmark: correct TypeScript, all tests passing, typecheck clean, no regressions. The engine makes $0.0003/task models produce the same quality as $0.03/task models.</p>
+        <div class="eyebrow">Full Pipeline</div>
+        <h2>5 models pass every test</h2>
+        <p class="section-desc">Same model on all pipeline layers (L1 + L2 + L3). All 6 tasks correct, <code>tsc --strict</code> clean, all tests green. Two of these are free local models running via Ollama.</p>
       </div>
 
       <div style="overflow-x:auto; margin-top: 2rem;">
@@ -211,36 +207,69 @@
             <tr style="border-bottom: 2px solid var(--border, #ddd);">
               <th style="text-align:left; padding: 0.5rem;">Model</th>
               <th style="text-align:center; padding: 0.5rem;">Provider</th>
-              <th style="text-align:right; padding: 0.5rem;">Input $/1M</th>
-              <th style="text-align:right; padding: 0.5rem;">Output $/1M</th>
-              <th style="text-align:center; padding: 0.5rem;">Speed</th>
+              <th style="text-align:center; padding: 0.5rem;">Result</th>
               <th style="text-align:right; padding: 0.5rem;">~Cost/Task</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td style="padding:0.35rem;">GPT-OSS 20B</td><td style="text-align:center;">Groq</td><td style="text-align:right;">$0.08</td><td style="text-align:right;">$0.30</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.0003</td></tr>
-            <tr><td style="padding:0.35rem;">Gemini 2.5 Flash Lite</td><td style="text-align:center;">Google</td><td style="text-align:right;">$0.10</td><td style="text-align:right;">$0.40</td><td style="text-align:center;">11s</td><td style="text-align:right;">$0.0004</td></tr>
-            <tr><td style="padding:0.35rem;">DeepSeek Chat</td><td style="text-align:center;">DeepSeek</td><td style="text-align:right;">$0.28</td><td style="text-align:right;">$0.42</td><td style="text-align:center;">26s</td><td style="text-align:right;">$0.001</td></tr>
-            <tr><td style="padding:0.35rem;">Grok 4-1 Fast</td><td style="text-align:center;">xAI</td><td style="text-align:right;">$0.20</td><td style="text-align:right;">$0.50</td><td style="text-align:center;">75s</td><td style="text-align:right;">$0.001</td></tr>
-            <tr><td style="padding:0.35rem;">MiniMax M2.1</td><td style="text-align:center;">OpenRouter</td><td style="text-align:right;">$0.27</td><td style="text-align:right;">$0.95</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.001</td></tr>
-            <tr><td style="padding:0.35rem;">Gemini 2.5 Flash</td><td style="text-align:center;">Google</td><td style="text-align:right;">$0.30</td><td style="text-align:right;">$2.50</td><td style="text-align:center;">11s</td><td style="text-align:right;">$0.002</td></tr>
-            <tr><td style="padding:0.35rem;">Kimi K2.5</td><td style="text-align:center;">OpenRouter</td><td style="text-align:right;">$0.38</td><td style="text-align:right;">$1.72</td><td style="text-align:center;">16s</td><td style="text-align:right;">$0.002</td></tr>
-            <tr><td style="padding:0.35rem;">Groq Llama 3.3 70B</td><td style="text-align:center;">Groq</td><td style="text-align:right;">$0.59</td><td style="text-align:right;">$0.79</td><td style="text-align:center;">12s</td><td style="text-align:right;">$0.002</td></tr>
-            <tr><td style="padding:0.35rem;">Cerebras Qwen3-235B</td><td style="text-align:center;">Cerebras</td><td style="text-align:right;">$0.60</td><td style="text-align:right;">$1.20</td><td style="text-align:center;">2s</td><td style="text-align:right;">$0.002</td></tr>
-            <tr><td style="padding:0.35rem;">GLM-5</td><td style="text-align:center;">OpenCode/Zen</td><td style="text-align:right;">$0.72</td><td style="text-align:right;">$2.30</td><td style="text-align:center;">15s</td><td style="text-align:right;">$0.003</td></tr>
-            <tr><td style="padding:0.35rem;">Claude Haiku 4.5</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$1.00</td><td style="text-align:right;">$5.00</td><td style="text-align:center;">25s</td><td style="text-align:right;">$0.007</td></tr>
-            <tr><td style="padding:0.35rem;">GPT-5.4</td><td style="text-align:center;">OpenAI</td><td style="text-align:right;">$2.50</td><td style="text-align:right;">$15.00</td><td style="text-align:center;">14s</td><td style="text-align:right;">$0.02</td></tr>
-            <tr><td style="padding:0.35rem;">Claude Sonnet 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$3.00</td><td style="text-align:right;">$15.00</td><td style="text-align:center;">69s</td><td style="text-align:right;">$0.02</td></tr>
-            <tr><td style="padding:0.35rem;">Claude Opus 4.6</td><td style="text-align:center;">Anthropic</td><td style="text-align:right;">$5.00</td><td style="text-align:right;">$25.00</td><td style="text-align:center;">29s</td><td style="text-align:right;">$0.03</td></tr>
+            <tr style="background: rgba(34,197,94,0.08);"><td style="padding:0.35rem;">Qwen 3.5 (397B)</td><td style="text-align:center;">Ollama (local)</td><td style="text-align:center; color: #22c55e; font-weight: 600;">6/6 PASS</td><td style="text-align:right; font-weight: 600;">FREE</td></tr>
+            <tr style="background: rgba(34,197,94,0.08);"><td style="padding:0.35rem;">GLM-5.1</td><td style="text-align:center;">Ollama (local)</td><td style="text-align:center; color: #22c55e; font-weight: 600;">6/6 PASS</td><td style="text-align:right; font-weight: 600;">FREE</td></tr>
+            <tr style="background: rgba(34,197,94,0.08);"><td style="padding:0.35rem;">Claude Sonnet 4.6</td><td style="text-align:center;">Anthropic OAuth</td><td style="text-align:center; color: #22c55e; font-weight: 600;">6/6 PASS</td><td style="text-align:right;">~$0.06</td></tr>
+            <tr style="background: rgba(34,197,94,0.08);"><td style="padding:0.35rem;">Claude Opus 4.6</td><td style="text-align:center;">Anthropic OAuth</td><td style="text-align:center; color: #22c55e; font-weight: 600;">6/6 PASS</td><td style="text-align:right;">~$0.07</td></tr>
+            <tr style="background: rgba(34,197,94,0.08);"><td style="padding:0.35rem;">GPT-5.4</td><td style="text-align:center;">OpenAI OAuth</td><td style="text-align:center; color: #22c55e; font-weight: 600;">6/6 PASS</td><td style="text-align:right;">~$0.13</td></tr>
           </tbody>
         </table>
       </div>
-      <p style="font-size:0.8rem; color:var(--text-3); margin-top:0.75rem;">+ 13 more models at 100/100: GPT-5.4 Mini/Nano, GPT-5/5.2, GLM-4.6/4.7, MiniMax M2.5, Kimi K2, Grok 3 Mini, Grok Code Fast, Big Pickle, DeepSeek Reasoner, Qwen3-32B</p>
+
+      <h3 style="margin-top: 2.5rem; font-size: 1.1rem;">Partial pass</h3>
+      <p style="font-size: 0.85rem; color: var(--text-2); margin-bottom: 1rem;">These models pass some tasks but fail others. Still useful for targeted work.</p>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse: collapse; font-size: 0.85rem;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--border, #ddd);">
+              <th style="text-align:left; padding: 0.5rem;">Model</th>
+              <th style="text-align:center; padding: 0.5rem;">Provider</th>
+              <th style="text-align:center; padding: 0.5rem;">Result</th>
+              <th style="text-align:right; padding: 0.5rem;">~Cost/Task</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style="padding:0.35rem;">Nemotron 3 Super (120B)</td><td style="text-align:center;">Ollama (local)</td><td style="text-align:center; color: #eab308;">Partial</td><td style="text-align:right;">FREE</td></tr>
+            <tr><td style="padding:0.35rem;">GPT-OSS 20B</td><td style="text-align:center;">Ollama (local)</td><td style="text-align:center; color: #eab308;">Partial</td><td style="text-align:right;">FREE</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- KEY FINDING -->
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-header">
+        <div class="eyebrow">Key Finding</div>
+        <h2>Great coder does not mean great planner</h2>
+        <p class="section-desc">Gemini 2.5 Flash scores 98/100 as an L3 executor only (7-17s per task, ~$0.003) but drops to 78/100 in the full pipeline. It writes excellent code but produces bad plans. This is the most important result in our benchmarks.</p>
+      </div>
+
+      <div class="grid-2" style="margin-top: 2rem; gap: 1rem;">
+        <div class="page-card" style="border-left: 3px solid #22c55e;">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: #22c55e;">L3 executor only: 98/100</h3>
+          <p>When a strong model handles planning and Gemini only executes the code, it is fast, cheap, and nearly perfect. This is the optimal configuration for cost-sensitive work.</p>
+        </div>
+        <div class="page-card" style="border-left: 3px solid #ef4444;">
+          <h3 style="font-family: 'SF Mono', monospace; font-size: 0.95rem; color: #ef4444;">Full pipeline (solo): 78/100</h3>
+          <p>When Gemini also handles L1 routing and L2 planning, it makes bad decomposition decisions that cascade into failures. The code it writes is fine; the plans it makes are not.</p>
+        </div>
+      </div>
+
+      <div style="background: var(--bg-card2, #111827); border-radius: 12px; padding: 2rem; margin-top: 2rem;">
+        <p style="font-size: 0.9rem; color: var(--text-2); margin: 0;"><strong>Takeaway:</strong> the optimal setup is a strong model (Claude, GPT, Qwen 3.5) for L1/L2 planning and a cheap/fast model for L3 execution. crewswarm supports this via the <code>/stack</code> command &mdash; pick different models for different layers.</p>
+      </div>
     </div>
   </section>
 
   <!-- L2 PLANNER RESULTS -->
-  <section class="section section-alt">
+  <section class="section">
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">L2 Planner</div>
@@ -278,8 +307,8 @@
     <div class="container">
       <div class="section-header">
         <div class="eyebrow">Under the Hood</div>
-        <h2>Why cheap models match expensive ones</h2>
-        <p class="section-desc">The execution quality engine wraps every task in 8 runtime modules that prevent common failure modes. These are not prompting tricks &mdash; they are structural constraints that force correct behavior regardless of model intelligence.</p>
+        <h2>How the engine helps (and where it doesn't)</h2>
+        <p class="section-desc">The execution quality engine wraps every task in 8 runtime modules that prevent common failure modes. These genuinely help &mdash; but they don't make every model pass. Models still need baseline planning and coding ability. The engine prevents stupid mistakes; it can't add intelligence.</p>
       </div>
 
       <div class="feature-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
