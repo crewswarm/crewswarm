@@ -17,6 +17,7 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm install --prefix apps/dashboard
+      - run: cd apps/dashboard && npm run build
       - run: npm run doctor
       - run: npm run test:unit
       - run: npm run smoke:static
