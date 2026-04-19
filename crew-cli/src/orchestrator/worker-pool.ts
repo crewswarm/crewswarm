@@ -39,7 +39,9 @@ export class WorkerPool {
   private timeoutMs: number;
   private logger = new Logger();
 
-  constructor(private options: WorkerPoolOptions) {
+  options: WorkerPoolOptions;
+  constructor(options: WorkerPoolOptions) {
+    this.options = options;
     this.concurrency = options.concurrency || 3;
     this.maxRetries = options.maxRetries || 2;
     this.timeoutMs = options.timeoutMs || 120000;

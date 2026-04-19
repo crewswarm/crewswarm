@@ -20,7 +20,12 @@ export interface FileStats {
 }
 
 export class VirtualFS {
-  constructor(private sandbox: Sandbox, private baseDir: string = process.cwd()) {}
+  sandbox: Sandbox;
+  baseDir: string;
+  constructor(sandbox: Sandbox, baseDir: string = process.cwd()) {
+    this.sandbox = sandbox;
+    this.baseDir = baseDir;
+  }
 
   /**
    * Read file - checks sandbox first, then disk

@@ -173,12 +173,15 @@ export function constraintLevelForPersona(persona: string): ConstraintLevel {
 
 // Create config adapter for Gemini tools
 export class CrewConfig {
-  constructor(private workspaceRoot: string) {}
-  
+  workspaceRoot: string;
+  constructor(workspaceRoot: string) {
+    this.workspaceRoot = workspaceRoot;
+  }
+
   getWorkspaceRoot() {
     return this.workspaceRoot;
   }
-  
+
   getTargetDir() {
     return this.workspaceRoot;
   }
@@ -261,7 +264,9 @@ export class GeminiToolAdapter {
 
   private _realWorkspaceRoot: string | null = null;
 
-  constructor(private sandbox: Sandbox, constraintLevel: ConstraintLevel = 'full') {
+  sandbox: Sandbox;
+  constructor(sandbox: Sandbox, constraintLevel: ConstraintLevel = 'full') {
+    this.sandbox = sandbox;
     const workspaceRoot = sandbox.getBaseDir() || process.cwd();
     this.config = new CrewConfig(workspaceRoot);
     this.messageBus = new CrewMessageBus();

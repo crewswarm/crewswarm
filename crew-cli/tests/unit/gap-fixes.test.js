@@ -89,18 +89,18 @@ test('collectVerificationSignals: shell command with error → verificationPasse
   assert.equal(result.verificationPassed, false);
 });
 
-test('collectVerificationSignals: no shell commands → verificationPassed false with reason', () => {
+test('collectVerificationSignals: no shell commands, no readback → verificationPassed false with reason', () => {
   const p = makePipeline();
   const task = createAdHocWorkerTask({ id: 'v3', goal: 'Update src/auth/jwt.ts with new token logic' });
   const history = [
-    { tool: 'read_file', params: { file_path: 'src/auth/jwt.ts' }, result: { output: 'contents' } },
+    { tool: 'read_file', params: { file_path: 'src/auth/other.ts' }, result: { output: 'contents' } },
     { tool: 'write_file', params: { file_path: 'src/auth/jwt.ts' }, result: { output: 'wrote file' } },
   ];
   const parsed = { output: 'Done', validation: [] };
   const result = p.collectVerificationSignals(history, parsed, task);
   assert.equal(result.verificationPassed, false);
   assert.equal(result.escalationNeeded, true);
-  assert.equal(result.escalationReason, 'No shell verification command was executed');
+  assert.equal(result.escalationReason, 'No shell verification command was executed and no files were written');
 });
 
 test('collectVerificationSignals: prose keywords do NOT trigger verification', () => {

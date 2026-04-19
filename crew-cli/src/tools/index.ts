@@ -75,7 +75,9 @@ export const CREW_TOOL_DECLARATIONS = [
 export class CrewToolExecutor {
   private vfs: VirtualFS;
 
-  constructor(private sandbox: Sandbox) {
+  sandbox: Sandbox;
+  constructor(sandbox: Sandbox) {
+    this.sandbox = sandbox;
     this.vfs = createVirtualFS(sandbox);
   }
 

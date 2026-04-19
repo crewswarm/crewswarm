@@ -20,7 +20,10 @@ export class StreamingToolExecutor {
   private runningTools: Map<string, Promise<ToolResult>> = new Map();
   private completedTools: Map<string, ToolResult> = new Map();
 
-  constructor(private readonly executeFn: ToolExecutorFn) {}
+  readonly executeFn: ToolExecutorFn;
+  constructor(executeFn: ToolExecutorFn) {
+    this.executeFn = executeFn;
+  }
 
   /**
    * Called as soon as a complete tool_use block is detected mid-stream.

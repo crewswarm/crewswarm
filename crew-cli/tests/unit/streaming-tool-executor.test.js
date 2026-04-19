@@ -88,7 +88,7 @@ describe('StreamingToolExecutor', () => {
 
     const fns = {
       fast: makeDelayedTool('fast', 5),
-      slow: makeDelayedTool('slow', 20)
+      slow: makeDelayedTool('slow', 200)
     };
 
     const executor = new StreamingToolExecutor(async (name) => fns[name]?.());

@@ -24,7 +24,9 @@ export class XcodeMcpBridgeFixTransport
   extends EventEmitter
   implements Transport
 {
-  constructor(private readonly transport: Transport) {
+  readonly transport: Transport;
+  constructor(transport: Transport) {
+    this.transport = transport;
     super();
 
     // Forward messages from the underlying transport

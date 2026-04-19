@@ -57,19 +57,19 @@ describe('Phase 1b: Trust-gated tool filtering', () => {
     }
   });
 
-  test('read-only personas get read-only level', () => {
+  test('planner/architect personas get read-only level', () => {
     if (!constraintLevelForPersona) return;
-    for (const persona of ['planner', 'reviewer', 'crew-qa', 'qa']) {
+    for (const persona of ['planner', 'architect']) {
       const level = constraintLevelForPersona(persona);
       assert.equal(level, 'read-only', `${persona} should be read-only`);
     }
   });
 
-  test('coding personas get edit level', () => {
+  test('execution personas get full level', () => {
     if (!constraintLevelForPersona) return;
-    for (const persona of ['executor-code', 'crew-coder', 'crew-coder-front', 'crew-coder-back', 'crew-fixer']) {
+    for (const persona of ['executor-code', 'crew-coder', 'crew-coder-front', 'crew-coder-back', 'crew-fixer', 'reviewer', 'crew-qa', 'qa']) {
       const level = constraintLevelForPersona(persona);
-      assert.equal(level, 'edit', `${persona} should be edit`);
+      assert.equal(level, 'full', `${persona} should be full`);
     }
   });
 
