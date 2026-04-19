@@ -6,15 +6,16 @@
 # Run:    docker compose up   (see docker-compose.yml)
 
 # ── Stage 1: build Vite dashboard ────────────────────────────────────────────
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /app/apps/dashboard
 COPY apps/dashboard/package*.json ./
 RUN npm ci
 COPY apps/dashboard/ ./
+COPY lib/ /app/lib/
 RUN npm run build
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 
 # System deps (git for crew-github, curl for health checks)
 RUN apk add --no-cache git curl bash
