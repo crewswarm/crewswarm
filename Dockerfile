@@ -17,8 +17,8 @@ RUN npm run build
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
 
-# System deps (git for crew-github, curl for health checks)
-RUN apk add --no-cache git curl bash
+# System deps (git for crew-github, curl for health checks, build tools for node-pty)
+RUN apk add --no-cache git curl bash python3 make g++
 
 WORKDIR /app
 
