@@ -222,19 +222,32 @@
       <a href="pm-loop-walkthrough.html" class="btn btn-ghost">Walkthrough</a>
       <a href="engine-comparison.html" class="btn btn-ghost">Compare Engines</a>
     </div>
-    <div style="margin-top: 0.75rem; display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm').then(()=>{this.querySelector('.copy-icon').textContent='copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='copy',2000)})" title="Click to copy">
-      <code style="color: var(--accent);">npm install -g crewswarm</code>
-      <span class="copy-icon" style="font-size: 0.7rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.05em;">copy</span>
+    <div style="margin-top: 0.75rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem;">
+      <div style="display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm').then(()=>{this.querySelector('.copy-icon').textContent='copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='copy',2000)})" title="Click to copy">
+        <code style="color: var(--accent);">npm install -g crewswarm</code>
+        <span class="copy-icon" style="font-size: 0.7rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.05em;">copy</span>
+      </div>
+      <div style="display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm-cli').then(()=>{this.querySelector('.copy-icon').textContent='copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='copy',2000)})" title="Click to copy">
+        <code style="color: var(--accent);">npm install -g crewswarm-cli</code>
+        <span class="copy-icon" style="font-size: 0.7rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.05em;">copy</span>
+      </div>
+      <div style="display: inline-flex; align-items: center; gap: 0.75rem; font-family: 'SF Mono', monospace; font-size: 0.85rem; color: var(--text-3); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer;" onclick="navigator.clipboard.writeText('npm install -g crewswarm-openclaw-plugin').then(()=>{this.querySelector('.copy-icon').textContent='copied';setTimeout(()=>this.querySelector('.copy-icon').textContent='copy',2000)})" title="Click to copy">
+        <code style="color: var(--accent);">npm install -g crewswarm-openclaw-plugin</code>
+        <span class="copy-icon" style="font-size: 0.7rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.05em;">copy</span>
+      </div>
     </div>
     <div style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
       <a href="https://github.com/crewswarm/crewswarm" target="_blank" rel="noopener">
         <img src="https://img.shields.io/github/stars/crewswarm/crewswarm?style=flat&color=818cf8&label=stars" alt="GitHub stars" loading="lazy" height="22" />
       </a>
       <a href="https://www.npmjs.com/package/crewswarm" target="_blank" rel="noopener">
-        <img src="https://img.shields.io/npm/dt/crewswarm?label=npm&color=818cf8" alt="npm downloads" loading="lazy" height="22" />
+        <img src="https://img.shields.io/npm/dt/crewswarm?label=crewswarm&color=818cf8" alt="crewswarm downloads" loading="lazy" height="22" />
       </a>
       <a href="https://www.npmjs.com/package/crewswarm-cli" target="_blank" rel="noopener">
-        <img src="https://img.shields.io/npm/dt/crewswarm-cli?label=cli&color=818cf8" alt="CLI downloads" loading="lazy" height="22" />
+        <img src="https://img.shields.io/npm/dt/crewswarm-cli?label=crewswarm-cli&color=818cf8" alt="crewswarm-cli downloads" loading="lazy" height="22" />
+      </a>
+      <a href="https://www.npmjs.com/package/crewswarm-openclaw-plugin" target="_blank" rel="noopener">
+        <img src="https://img.shields.io/npm/dt/crewswarm-openclaw-plugin?label=openclaw-plugin&color=818cf8" alt="openclaw-plugin downloads" loading="lazy" height="22" />
       </a>
       <span style="font-size: 0.8rem; color: var(--text-3);">Free forever. Open source.</span>
     </div>
