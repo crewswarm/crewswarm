@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -102,7 +102,7 @@ jobs:
 
       - name: Checkout repository
         if: env.HAS_DOCKERHUB == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Pull and test Docker image
         if: env.HAS_DOCKERHUB == 'true'
@@ -164,7 +164,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

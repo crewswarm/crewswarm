@@ -140,6 +140,7 @@ async function executeHookCommand(
     });
 
     // Pipe tool input as JSON on stdin
+    proc.stdin.on('error', () => { /* ignore EPIPE — process exited before reading */ });
     proc.stdin.write(stdinData);
     proc.stdin.end();
   });

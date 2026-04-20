@@ -9,7 +9,7 @@ import { rm } from 'node:fs/promises';
 
 // Create a temp git repo for testing
 const TEST_REPO = mkdtempSync(join(tmpdir(), 'crew-wt-test-'));
-execSync('git init && git commit --allow-empty -m "init"', { cwd: TEST_REPO });
+execSync('git init && git config user.email "test@test.com" && git config user.name "Test" && git commit --allow-empty -m "init"', { cwd: TEST_REPO });
 
 test('enterWorktree creates a worktree and branch', () => {
   const info = enterWorktree(TEST_REPO, { branchPrefix: 'test-wt', agentId: 'abc123' });
@@ -39,7 +39,7 @@ test('exitWorktree keeps branch when changes are committed', async () => {
 
   // Make a change in the worktree
   writeFileSync(join(info.worktreePath, 'new-file.txt'), 'agent work');
-  execSync('git add -A && git commit -m "agent work"', { cwd: info.worktreePath });
+  execSync('git config user.email "test@test.com" && git config user.name "Test" && git add -A && git commit -m "agent work"', { cwd: info.worktreePath });
 
   const result = await exitWorktree(TEST_REPO, info.branchName);
   assert.equal(result.hasChanges, true);
