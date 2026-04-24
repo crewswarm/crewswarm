@@ -36,6 +36,8 @@ crew-cli is the built-in execution engine. It runs standalone or as one of crews
 - API Docs: https://crewswarm.ai/api.html
 - Documentation: https://crewswarm.ai/docs.html
 - PM Loop: https://crewswarm.ai/pm-loop.html
+- PM Loop Walkthrough: https://crewswarm.ai/pm-loop-walkthrough.html
+- Engine Comparison: https://crewswarm.ai/engine-comparison.html
 - ATAT Protocol: https://crewswarm.ai/atat.html
 - GitHub repo: https://github.com/crewswarm/crewswarm
 - npm: https://www.npmjs.com/package/crewswarm

@@ -64,6 +64,27 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: cd apps/dashboard && npm ci && npm run build
-      - run: node scripts/dashboard.mjs &
-      - run: sleep 5
+      - name: Bootstrap minimal config
+        run: |
+          mkdir -p ~/.crewswarm
+          echo '{"agents":[],"providers":{}}' > ~/.crewswarm/crewswarm.json
+          echo '[]' > ~/.crewswarm/cmd-allowlist.json
+          echo '{}' > ~/.crewswarm/agent-prompts.json
+      - name: Start crew-lead and dashboard
+        run: |
+          node crew-lead.mjs > /tmp/crew-lead.log 2>&1 &
+          node scripts/dashboard.mjs > /tmp/dashboard.log 2>&1 &
+      - name: Wait for dashboard health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4319/api/health >/dev/null 2>&1; then
+              echo "dashboard healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "dashboard health check failed — logs follow"
+          echo "── crew-lead.log ──"; tail -50 /tmp/crew-lead.log || true
+          echo "── dashboard.log ──"; tail -50 /tmp/dashboard.log || true
+          exit 1
       - run: npx playwright test --reporter=github

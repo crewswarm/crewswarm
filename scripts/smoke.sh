@@ -140,7 +140,7 @@ fi
 
 # ── 8. Unit test suite ─────────────────────────────────────────────────────
 info "Test suite"
-TEST_OUTPUT="$(CREWSWARM_TEST_MODE=true node --test test/unit/*.test.mjs 2>&1)" || true
+TEST_OUTPUT="$(CREWSWARM_TEST_MODE=true node --test --test-force-exit test/unit/*.test.mjs 2>&1)" || true
 TEST_TOTAL="$(printf '%s\n' "$TEST_OUTPUT" | sed -n 's/^ℹ tests \([0-9][0-9]*\)$/\1/p' | tail -1)"
 if printf '%s\n' "$TEST_OUTPUT" | grep -q "fail 0"; then
   ok "unit tests (${TEST_TOTAL:-unknown} tests)"

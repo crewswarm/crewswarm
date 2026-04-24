@@ -190,17 +190,17 @@ describe("appendHistory + loadHistory", () => {
     assert.equal(history[1].content, "after corrupt");
   });
 
-  it("applies MAX_HISTORY limit (last 2000 messages)", () => {
-    // Write 2005 messages directly to test the slice
+  it("applies MAX_HISTORY limit (last 40 messages)", () => {
+    // Write 45 messages directly to test the slice
     const file = sessionFile("u-limit", "slimit");
-    for (let i = 0; i < 2005; i++) {
+    for (let i = 0; i < 45; i++) {
       fs.appendFileSync(file, JSON.stringify({ role: "user", content: `msg-${i}`, ts: i }) + "\n");
     }
     const history = loadHistory("u-limit", "slimit");
-    assert.equal(history.length, 2000);
-    // Should return the last 2000 (messages 5 through 2004)
+    assert.equal(history.length, 40);
+    // Should return the last 40 (messages 5 through 44)
     assert.equal(history[0].content, "msg-5");
-    assert.equal(history[1999].content, "msg-2004");
+    assert.equal(history[39].content, "msg-44");
   });
 });
 
