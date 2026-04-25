@@ -100,11 +100,14 @@ jobs:
             const cfg = {
               rt: { authToken: token },
               agents: [
-                { id: 'crew-main',  model: 'groq/llama-3.3-70b-versatile' },
-                { id: 'crew-coder', model: 'groq/llama-3.3-70b-versatile' },
-                { id: 'crew-qa',    model: 'groq/llama-3.3-70b-versatile' },
-                { id: 'crew-fixer', model: 'groq/llama-3.3-70b-versatile' },
-                { id: 'crew-pm',    model: 'groq/llama-3.3-70b-versatile' }
+                { id: 'crew-lead',        model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-main',        model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-coder',       model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-qa',          model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-fixer',       model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-pm',          model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-orchestrator',model: 'groq/llama-3.3-70b-versatile' },
+                { id: 'crew-judge',       model: 'groq/llama-3.3-70b-versatile' }
               ],
               providers: { groq: { apiKey: groqKey, baseUrl: 'https://api.groq.com/openai/v1' } }
             };
