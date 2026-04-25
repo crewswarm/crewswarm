@@ -33,6 +33,9 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
+      - name: Install Playwright browsers (used by test/integration/browser-e2e)
+        run: npx playwright install --with-deps chromium
+
       - name: Build dashboard
         run: cd apps/dashboard && npm ci && npm run build
 
