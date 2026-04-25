@@ -38,7 +38,9 @@ test("health-check supports static mode and machine-readable json", () => {
 });
 
 test("health-check --json --no-services returns structured output under a temporary home", () => {
-  const tmpHome = fs.mkdtempSync(path.join(path.resolve("test-output"), "health-home-"));
+  const outDir = path.resolve("test-output");
+  fs.mkdirSync(outDir, { recursive: true });
+  const tmpHome = fs.mkdtempSync(path.join(outDir, "health-home-"));
   const cfgDir = path.join(tmpHome, ".crewswarm");
   fs.mkdirSync(cfgDir, { recursive: true });
   fs.writeFileSync(

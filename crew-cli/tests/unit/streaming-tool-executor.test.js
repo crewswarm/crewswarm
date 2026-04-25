@@ -134,13 +134,14 @@ describe('StreamingToolExecutor', () => {
 
   test('durationMs is measured for successful tools', async () => {
     const executor = new StreamingToolExecutor(async () => {
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise(r => setTimeout(r, 50));
       return 'ok';
     });
 
     executor.onToolUseComplete('dur', 'slow_tool', {});
     const results = await executor.getRemainingResults();
-    assert.ok(results[0].durationMs >= 10, `expected durationMs >= 10 but got ${results[0].durationMs}`);
+    // Allow some clock slack for CI; setTimeout(50) under load can clock as low as ~30ms
+    assert.ok(results[0].durationMs >= 30, `expected durationMs >= 30 but got ${results[0].durationMs}`);
   });
 });
 
