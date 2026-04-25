@@ -96,4 +96,4 @@ jobs:
           echo "── crew-lead.log ──"; tail -50 /tmp/crew-lead.log || true
           echo "── dashboard.log ──"; tail -50 /tmp/dashboard.log || true
           exit 1
-      - run: npx playwright test --reporter=github --ignore-glob="**/vibe-*.spec.js"
+      - run: npx playwright test --reporter=github

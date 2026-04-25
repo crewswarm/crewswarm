@@ -3,6 +3,7 @@ import { defineConfig, devices } from "playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.spec.js",
+  testIgnore: process.env.CI ? ["**/vibe-*.spec.js"] : [],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
