@@ -16,7 +16,7 @@ logs/
 *.stop
 
 # Memory runtime state (keep schema/docs, exclude live state)
-memory/
+/memory/
 reports/
 
 # Brotli/gzip compressed build artifacts

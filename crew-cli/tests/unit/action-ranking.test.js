@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { rankActions, buildActionRankingPrompt } from '../../crew-cli/src/execution/action-ranking.ts';
+import { rankActions, buildActionRankingPrompt } from '../../src/execution/action-ranking.ts';
 
 // Helper: build a TurnResult
 function tr(turn, tool, params = {}, result = 'ok', error) {
