@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  workers: process.env.CI ? 2 : 1,
+  workers: process.env.CI ? 4 : 1,
   reporter: [["list"]],
   timeout: 45_000,
   expect: {
